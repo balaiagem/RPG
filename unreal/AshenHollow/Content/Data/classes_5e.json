@@ -1,0 +1,489 @@
+{
+  "barbarian": {
+    "id": "barbarian",
+    "name": "Barbarian",
+    "hitDie": 12,
+    "primaryAttributes": [
+      "strength",
+      "constitution"
+    ],
+    "armor": "unarmored_con",
+    "weapon": "greataxe",
+    "abilities": [
+      "rage"
+    ],
+    "passives": [
+      "Unarmored Defense",
+      "Rage"
+    ],
+    "description": "A relentless front-line warrior. Rage adds melee damage and resists physical blows.",
+    "color": "#b76c52",
+    "skillChoices": [
+      "athletics",
+      "nature",
+      "perception",
+      "survival"
+    ],
+    "skillCount": 2,
+    "castingStat": "",
+    "spellChoices": [],
+    "spellSlots": 0,
+    "savingThrowProficiencies": [
+      "strength",
+      "constitution"
+    ]
+  },
+  "bard": {
+    "id": "bard",
+    "name": "Bard",
+    "hitDie": 8,
+    "primaryAttributes": [
+      "charisma",
+      "dexterity"
+    ],
+    "armor": "leather",
+    "weapon": "rapier",
+    "abilities": [
+      "vicious_mockery",
+      "healing_word"
+    ],
+    "passives": [
+      "Spellcasting"
+    ],
+    "description": "Magic through voice and presence. Unsettle enemies and restore wounds.",
+    "color": "#b895c7",
+    "skillChoices": [
+      "acrobatics",
+      "arcana",
+      "athletics",
+      "deception",
+      "insight",
+      "investigation",
+      "nature",
+      "perception",
+      "performance",
+      "persuasion",
+      "religion",
+      "sleight_of_hand",
+      "stealth",
+      "survival"
+    ],
+    "skillCount": 3,
+    "castingStat": "charisma",
+    "spellChoices": [
+      "vicious_mockery",
+      "cure_wounds",
+      "healing_word",
+      "thunderwave",
+      "heroism"
+    ],
+    "spellSlots": 2,
+    "savingThrowProficiencies": [
+      "dexterity",
+      "charisma"
+    ]
+  },
+  "cleric": {
+    "id": "cleric",
+    "name": "Cleric",
+    "hitDie": 8,
+    "primaryAttributes": [
+      "wisdom",
+      "charisma"
+    ],
+    "armor": "chain_shield",
+    "weapon": "mace",
+    "abilities": [
+      "sacred_flame",
+      "cure_wounds"
+    ],
+    "passives": [
+      "Life Domain",
+      "Disciple of Life"
+    ],
+    "description": "A Life-domain protector. Armored casting and stronger healing.",
+    "color": "#dfc78c",
+    "skillChoices": [
+      "history",
+      "insight",
+      "medicine",
+      "persuasion",
+      "religion"
+    ],
+    "skillCount": 2,
+    "castingStat": "wisdom",
+    "spellChoices": [
+      "sacred_flame",
+      "cure_wounds",
+      "healing_word",
+      "guiding_bolt",
+      "shield_of_faith"
+    ],
+    "spellSlots": 2,
+    "savingThrowProficiencies": [
+      "wisdom",
+      "charisma"
+    ]
+  },
+  "druid": {
+    "id": "druid",
+    "name": "Druid",
+    "hitDie": 8,
+    "primaryAttributes": [
+      "wisdom",
+      "intelligence"
+    ],
+    "armor": "leather_shield",
+    "weapon": "staff",
+    "abilities": [
+      "produce_flame",
+      "cure_wounds"
+    ],
+    "passives": [
+      "Spellcasting",
+      "Druidic"
+    ],
+    "description": "A keeper of the wild. Nature lore, flame and restorative magic.",
+    "color": "#95b881",
+    "skillChoices": [
+      "arcana",
+      "animal_handling",
+      "insight",
+      "medicine",
+      "nature",
+      "perception",
+      "religion",
+      "survival"
+    ],
+    "skillCount": 2,
+    "castingStat": "wisdom",
+    "spellChoices": [
+      "produce_flame",
+      "cure_wounds",
+      "thunderwave",
+      "entangle"
+    ],
+    "spellSlots": 2,
+    "savingThrowProficiencies": [
+      "intelligence",
+      "wisdom"
+    ]
+  },
+  "fighter": {
+    "id": "fighter",
+    "name": "Fighter",
+    "hitDie": 10,
+    "primaryAttributes": [
+      "strength",
+      "constitution"
+    ],
+    "armor": "chain_shield",
+    "weapon": "longsword",
+    "abilities": [
+      "second_wind"
+    ],
+    "passives": [
+      "Fighting Style: Defense"
+    ],
+    "description": "A disciplined weapon master. Heavy armor and a reserve of endurance.",
+    "color": "#82b8c3",
+    "skillChoices": [
+      "acrobatics",
+      "animal_handling",
+      "athletics",
+      "history",
+      "insight",
+      "intimidation",
+      "perception",
+      "survival"
+    ],
+    "skillCount": 2,
+    "castingStat": "",
+    "spellChoices": [],
+    "spellSlots": 0,
+    "savingThrowProficiencies": [
+      "strength",
+      "constitution"
+    ]
+  },
+  "monk": {
+    "id": "monk",
+    "name": "Monk",
+    "hitDie": 8,
+    "primaryAttributes": [
+      "dexterity",
+      "wisdom"
+    ],
+    "armor": "unarmored_wis",
+    "weapon": "unarmed",
+    "abilities": [
+      "martial_strike"
+    ],
+    "passives": [
+      "Unarmored Defense",
+      "Martial Arts"
+    ],
+    "description": "An unarmored martial artist. Dexterity strikes and a follow-up bonus attack.",
+    "color": "#d5ab74",
+    "skillChoices": [
+      "acrobatics",
+      "athletics",
+      "history",
+      "insight",
+      "religion",
+      "stealth"
+    ],
+    "skillCount": 2,
+    "castingStat": "",
+    "spellChoices": [],
+    "spellSlots": 0,
+    "savingThrowProficiencies": [
+      "strength",
+      "dexterity"
+    ]
+  },
+  "paladin": {
+    "id": "paladin",
+    "name": "Paladin",
+    "hitDie": 10,
+    "primaryAttributes": [
+      "strength",
+      "charisma"
+    ],
+    "armor": "chain_shield",
+    "weapon": "longsword",
+    "abilities": [
+      "lay_on_hands",
+      "divine_sense"
+    ],
+    "passives": [
+      "Divine Sense",
+      "Lay on Hands"
+    ],
+    "description": "An armored oath-seeker. A healing reserve and supernatural awareness.",
+    "color": "#d8c79c",
+    "skillChoices": [
+      "athletics",
+      "insight",
+      "intimidation",
+      "medicine",
+      "persuasion",
+      "religion"
+    ],
+    "skillCount": 2,
+    "castingStat": "",
+    "spellChoices": [],
+    "spellSlots": 0,
+    "savingThrowProficiencies": [
+      "wisdom",
+      "charisma"
+    ]
+  },
+  "ranger": {
+    "id": "ranger",
+    "name": "Ranger",
+    "hitDie": 10,
+    "primaryAttributes": [
+      "dexterity",
+      "wisdom"
+    ],
+    "armor": "scale",
+    "weapon": "longbow",
+    "abilities": [
+      "study_foe"
+    ],
+    "passives": [
+      "Favored Enemy: Plants",
+      "Natural Explorer: Forest"
+    ],
+    "description": "A forest hunter. Ranged attacks and advantage when tracking plant creatures.",
+    "color": "#a6b17b",
+    "skillChoices": [
+      "animal_handling",
+      "athletics",
+      "insight",
+      "investigation",
+      "nature",
+      "perception",
+      "stealth",
+      "survival"
+    ],
+    "skillCount": 3,
+    "castingStat": "",
+    "spellChoices": [],
+    "spellSlots": 0,
+    "savingThrowProficiencies": [
+      "strength",
+      "dexterity"
+    ]
+  },
+  "rogue": {
+    "id": "rogue",
+    "name": "Rogue",
+    "hitDie": 8,
+    "primaryAttributes": [
+      "dexterity",
+      "intelligence"
+    ],
+    "armor": "leather",
+    "weapon": "rapier",
+    "abilities": [
+      "hide"
+    ],
+    "passives": [
+      "Sneak Attack",
+      "Expertise"
+    ],
+    "description": "Strike from concealment. Advantage enables an extra 1d6 once per round.",
+    "color": "#a1aec2",
+    "skillChoices": [
+      "acrobatics",
+      "athletics",
+      "deception",
+      "insight",
+      "intimidation",
+      "investigation",
+      "perception",
+      "performance",
+      "persuasion",
+      "sleight_of_hand",
+      "stealth"
+    ],
+    "skillCount": 4,
+    "castingStat": "",
+    "spellChoices": [],
+    "spellSlots": 0,
+    "savingThrowProficiencies": [
+      "dexterity",
+      "intelligence"
+    ]
+  },
+  "sorcerer": {
+    "id": "sorcerer",
+    "name": "Sorcerer",
+    "hitDie": 6,
+    "primaryAttributes": [
+      "charisma",
+      "constitution"
+    ],
+    "armor": "draconic",
+    "weapon": "staff",
+    "abilities": [
+      "fire_bolt",
+      "magic_missile"
+    ],
+    "passives": [
+      "Draconic Resilience"
+    ],
+    "description": "Innate draconic magic. Natural armor and an extra hit point.",
+    "color": "#ce9681",
+    "skillChoices": [
+      "arcana",
+      "deception",
+      "insight",
+      "intimidation",
+      "persuasion",
+      "religion"
+    ],
+    "skillCount": 2,
+    "castingStat": "charisma",
+    "spellChoices": [
+      "fire_bolt",
+      "ray_of_frost",
+      "magic_missile",
+      "burning_hands",
+      "mage_armor"
+    ],
+    "spellSlots": 2,
+    "savingThrowProficiencies": [
+      "constitution",
+      "charisma"
+    ]
+  },
+  "warlock": {
+    "id": "warlock",
+    "name": "Warlock",
+    "hitDie": 8,
+    "primaryAttributes": [
+      "charisma",
+      "wisdom"
+    ],
+    "armor": "leather",
+    "weapon": "staff",
+    "abilities": [
+      "eldritch_blast",
+      "armor_of_agathys"
+    ],
+    "passives": [
+      "Pact Magic",
+      "Dark One's Blessing"
+    ],
+    "description": "A Fiend-pact caster. A short-rest spell slot and temporary HP on a kill.",
+    "color": "#b695bf",
+    "skillChoices": [
+      "arcana",
+      "deception",
+      "history",
+      "intimidation",
+      "investigation",
+      "nature",
+      "religion"
+    ],
+    "skillCount": 2,
+    "castingStat": "charisma",
+    "spellChoices": [
+      "eldritch_blast",
+      "chill_touch",
+      "armor_of_agathys",
+      "hellish_rebuke"
+    ],
+    "spellSlots": 1,
+    "savingThrowProficiencies": [
+      "wisdom",
+      "charisma"
+    ]
+  },
+  "wizard": {
+    "id": "wizard",
+    "name": "Wizard",
+    "hitDie": 6,
+    "primaryAttributes": [
+      "intelligence",
+      "wisdom"
+    ],
+    "armor": "unarmored",
+    "weapon": "staff",
+    "abilities": [
+      "fire_bolt",
+      "magic_missile"
+    ],
+    "passives": [
+      "Spellcasting",
+      "Arcane Recovery"
+    ],
+    "description": "A studied spellcaster. Intelligence guides magic; a short rest recovers one slot.",
+    "color": "#8eb6d6",
+    "skillChoices": [
+      "arcana",
+      "history",
+      "insight",
+      "investigation",
+      "medicine",
+      "religion"
+    ],
+    "skillCount": 2,
+    "castingStat": "intelligence",
+    "spellChoices": [
+      "fire_bolt",
+      "ray_of_frost",
+      "magic_missile",
+      "burning_hands",
+      "mage_armor"
+    ],
+    "spellSlots": 2,
+    "savingThrowProficiencies": [
+      "intelligence",
+      "wisdom"
+    ]
+  }
+}

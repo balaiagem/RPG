@@ -1,0 +1,979 @@
+You are a senior AAA game director, gameplay engineer, technical artist, systems designer, UI/UX designer, and full-stack game developer.
+
+Your task is to help me build my FIRST playable isometric action RPG.
+
+I am a beginner, so you must make the technical decisions for me whenever possible instead of constantly asking me what architecture or implementation approach I prefer.
+
+# PROJECT VISION
+
+Create an original high-quality isometric fantasy action RPG inspired by the gameplay principles of:
+
+* Dungeons & Dragons 5e / SRD-style tabletop rules
+* modern isometric action RPGs
+* click-to-move MOBAs
+* stylized low-poly / painterly 3D fantasy games
+
+The game must NOT copy proprietary maps, characters, artwork, names, sounds, UI layouts, source code, dialogue, lore, or assets from existing commercial games.
+
+However, study the gameplay concepts behind those genres and reproduce the FEELING through an original implementation.
+
+The long-term ambition is AAA-quality presentation, but development must begin with a polished vertical slice instead of attempting the entire game at once.
+
+I want something that feels immediately fun to control.
+
+---
+
+# CORE GAMEPLAY
+
+The game is an isometric action RPG.
+
+The player sees the world from an elevated three-quarter perspective.
+
+Movement works like a modern MOBA:
+
+RIGHT CLICK:
+Move the character toward the clicked location.
+
+RIGHT CLICK ON ENEMY:
+Move into appropriate range and perform the currently equipped basic attack.
+
+Q, W, E, R:
+Primary combat abilities/spells.
+
+1, 2, 3, 4:
+Consumables or secondary abilities.
+
+LEFT CLICK:
+Interaction, UI selection, inventory management, dialogue choices and target selection when appropriate.
+
+SPACE:
+Optional dodge / contextual action depending on character abilities.
+
+TAB:
+Highlight interactable objects and enemies.
+
+SHIFT:
+Hold position while attacking/casting when useful.
+
+ESC:
+Pause/settings menu.
+
+The movement needs to feel extremely responsive.
+
+Implement:
+
+* navigation/pathfinding
+* click destination indicator
+* character acceleration/deceleration
+* animation blending
+* enemy targeting
+* attack range detection
+* ability range indicators
+* ground-targeted abilities
+* projectile abilities
+* skillshots
+* area-of-effect abilities
+* melee attacks
+* casting animations
+* cooldown indicators
+* health bars
+* mana/resource bars
+* status effects
+* damage numbers
+* critical hit feedback
+
+Combat should have the readability and responsiveness of a competitive isometric game while retaining RPG depth.
+
+---
+
+# D&D-STYLE RULE SYSTEM
+
+Build the underlying RPG mechanics around D&D 5e / SRD-style concepts.
+
+The engine should support:
+
+Six core attributes:
+
+Strength
+Dexterity
+Constitution
+Intelligence
+Wisdom
+Charisma
+
+Attribute modifiers follow the traditional 5e formula.
+
+Support:
+
+* proficiency bonus
+* armor class
+* hit points
+* temporary hit points
+* attack rolls
+* damage rolls
+* critical hits
+* advantage
+* disadvantage
+* saving throws
+* skill checks
+* death states
+* resistances
+* vulnerabilities
+* immunities
+* conditions
+* concentration
+* spell slots
+* spell levels
+* short-rest resources
+* long-rest resources
+
+The system should internally use d20-based calculations even though combat happens in real time.
+
+Example:
+
+A sword attack may visually happen instantly, but internally:
+
+d20 + attack modifier vs Armor Class.
+
+If successful:
+
+weapon damage dice + relevant modifier.
+
+The dice calculations can optionally appear briefly in the combat log.
+
+---
+
+# REAL-TIME ADAPTATION OF 5E
+
+Do NOT turn combat into traditional turn-based combat.
+
+Instead adapt tabletop mechanics intelligently to real-time combat.
+
+For example:
+
+One tabletop round = approximately 6 seconds.
+
+Actions, bonus actions and reactions should be represented by cooldowns, resource restrictions or contextual opportunities.
+
+Example:
+
+An ability that would normally require an Action can use the global combat cadence.
+
+Bonus-action-type abilities should generally have shorter or independent usage restrictions.
+
+Reactions should become contextual triggers or reactive abilities.
+
+Preserve the strategic identity of the tabletop rules while making them enjoyable in real-time.
+
+---
+
+# CHARACTER CREATION
+
+At the beginning of the game, create a polished character creation screen.
+
+STEP 1 — ORIGIN / ANCESTRY
+
+Allow several original fantasy ancestries inspired by classic tabletop archetypes, such as:
+
+Human
+Elf
+Dwarf
+Halfling
+Orc-blooded
+Infernal-blooded
+Draconic-blooded
+
+Architecture must make it easy to add more later.
+
+Each ancestry can provide:
+
+* appearance options
+* movement traits
+* attribute/feature bonuses
+* passive abilities
+* unique traits
+
+STEP 2 — CLASS
+
+Initial playable classes:
+
+Fighter
+Rogue
+Ranger
+Barbarian
+Wizard
+Sorcerer
+Cleric
+Druid
+Paladin
+Warlock
+Monk
+Bard
+
+Build this as a DATA-DRIVEN system.
+
+Do not hard-code individual classes into UI logic.
+
+Classes should be defined through structured data.
+
+Each class contains:
+
+* hit die
+* primary attributes
+* armor proficiencies
+* weapon proficiencies
+* saving throw proficiencies
+* starting equipment
+* class abilities
+* spellcasting progression if applicable
+* resource mechanics
+* level progression
+
+STEP 3 — ATTRIBUTES
+
+Allow a standard array or point-buy system.
+
+Display clearly:
+
+STR
+DEX
+CON
+INT
+WIS
+CHA
+
+Show resulting bonuses.
+
+STEP 4 — SKILLS
+
+Allow appropriate skill proficiency choices.
+
+STEP 5 — SPELLS
+
+For spellcasting characters allow the player to select cantrips and level-appropriate spells.
+
+Show:
+
+spell name
+icon
+school/category
+cast time
+range
+damage/effect
+duration
+saving throw
+concentration requirement
+resource cost
+
+---
+
+# SPELL SYSTEM
+
+Create a modular spell framework capable of supporting hundreds of spells later.
+
+Spell definitions must be stored as data.
+
+Example conceptual schema:
+
+Spell
+{
+id
+name
+description
+icon
+level
+school
+castType
+targetingType
+range
+radius
+projectileSpeed
+cooldown
+spellSlotCost
+damageDice
+damageType
+savingThrow
+statusEffects
+duration
+concentration
+visualEffect
+audioEffect
+}
+
+Targeting types should support:
+
+SELF
+TARGET_ENEMY
+TARGET_ALLY
+GROUND_POINT
+CONE
+LINE
+CIRCLE
+PROJECTILE
+CHAIN
+AURA
+
+---
+
+# QWER ABILITY SYSTEM
+
+Every character has four primary combat slots:
+
+Q
+W
+E
+R
+
+Abilities can be dragged into these slots.
+
+Example:
+
+Wizard:
+
+Q — fire projectile
+W — defensive magical barrier
+E — area crowd-control spell
+R — powerful high-level spell
+
+Fighter:
+
+Q — heavy strike
+W — defensive stance
+E — charge
+R — powerful martial technique
+
+Do not make every class play identically.
+
+Class identity is extremely important.
+
+---
+
+# BASIC ATTACKS
+
+Characters can equip different weapons.
+
+Support:
+
+swords
+axes
+maces
+daggers
+bows
+crossbows
+staves
+spears
+two-handed weapons
+shields
+
+Weapon data should determine:
+
+attack range
+attack animation
+attack speed
+damage dice
+damage type
+stat scaling
+special properties
+
+Characters should automatically approach enemies until within attack range.
+
+---
+
+# CAMERA
+
+Use an isometric perspective similar to modern action RPGs.
+
+Camera requirements:
+
+* elevated 3D camera
+* approximately 35–55 degree downward angle
+* smooth follow
+* optional small rotation
+* adjustable zoom
+* camera collision handling
+* cinematic framing during important events
+
+Do not use a perfectly orthographic-looking camera.
+
+Keep enough perspective to make the world feel three-dimensional and cinematic.
+
+---
+
+# ART DIRECTION
+
+Create an ORIGINAL stylized dark-fantasy visual identity.
+
+The visual language should combine:
+
+* stylized low-to-mid poly geometry
+* hand-crafted silhouettes
+* physically based materials
+* painterly textures
+* dramatic volumetric lighting
+* realistic shadows
+* dense atmospheric fog
+* strong environment composition
+* readable characters
+* rich vegetation
+* cinematic weather
+* dynamic day/night lighting
+
+The world should look handcrafted rather than generic procedural AI art.
+
+Aim for visual clarity at isometric camera distance.
+
+Characters must remain readable even during large fights.
+
+Avoid excessive photorealism.
+
+Instead create a stylized fantasy world where:
+
+lighting = high fidelity
+geometry = moderately stylized
+textures = painterly / detailed
+effects = cinematic
+
+---
+
+# WORLD
+
+For the first vertical slice create ONE handcrafted region.
+
+Theme:
+
+Ancient forest surrounding abandoned medieval ruins.
+
+Include:
+
+* forest pathways
+* cliffs
+* river
+* bridge
+* abandoned village
+* ruined watchtower
+* cave
+* small dungeon
+* ancient shrine
+* enemy encampment
+
+The player should be able to explore freely.
+
+Use environmental storytelling rather than excessive exposition.
+
+---
+
+# FIRST QUEST
+
+Create a short introductory adventure lasting approximately 30–45 minutes.
+
+Basic premise:
+
+The player arrives at a remote settlement where travelers have recently disappeared.
+
+A nearby forest appears to be changing.
+
+The local ruins hide evidence that an ancient magical phenomenon has awakened.
+
+The quest should introduce:
+
+movement
+combat
+dialogue
+exploration
+loot
+skill checks
+spells
+resting
+inventory
+a small dungeon
+a boss fight
+
+Do not rely on walls of text.
+
+Tell the story primarily through:
+
+NPC behavior
+environment
+short dialogue
+discoverable objects
+combat encounters
+visual clues
+
+---
+
+# DIALOGUE
+
+Create a branching dialogue system.
+
+Dialogue choices may depend on:
+
+Charisma
+Persuasion
+Intimidation
+Deception
+Insight
+class
+ancestry
+previous decisions
+quest state
+
+Example:
+
+[Persuasion DC 12]
+Convince the guard to open the gate.
+
+The game rolls internally:
+
+d20 + Persuasion modifier.
+
+Display the roll elegantly.
+
+Do not stop the entire game for unnecessary dice animations.
+
+---
+
+# SKILL CHECKS
+
+The environment should contain contextual skill checks.
+
+Examples:
+
+Athletics:
+Climb a damaged wall.
+
+Perception:
+Notice an ambush.
+
+Investigation:
+Discover a hidden mechanism.
+
+Arcana:
+Understand magical symbols.
+
+Nature:
+Identify poisonous plants.
+
+Stealth:
+Approach enemies unnoticed.
+
+---
+
+# ENEMIES
+
+Create an extensible enemy AI architecture.
+
+Enemy behaviors:
+
+idle
+patrol
+investigate
+alert
+chase
+attack
+retreat
+search
+call allies
+special ability
+death
+
+Enemies must use navigation and spatial awareness.
+
+Different enemy archetypes should behave differently.
+
+Examples:
+
+melee bruiser
+ranged attacker
+archer
+spellcaster
+assassin
+tank
+summoner
+boss
+
+---
+
+# BOSS DESIGN
+
+The vertical slice should end with a memorable boss.
+
+Boss fights should NOT simply be enemies with large health bars.
+
+Implement:
+
+multiple phases
+telegraphed attacks
+environmental mechanics
+summoned creatures
+movement mechanics
+interrupt opportunities
+status effects
+positioning challenges
+
+The player should need to understand the fight.
+
+---
+
+# LOOT
+
+Create a procedural loot framework.
+
+Item rarity:
+
+Common
+Uncommon
+Rare
+Epic
+Legendary
+
+Items may have:
+
+base stats
+prefix
+suffix
+rarity
+required level
+damage
+armor
+attribute bonuses
+resistances
+unique effects
+
+However, legendary items should generally be handcrafted rather than random stat combinations.
+
+---
+
+# INVENTORY
+
+Create a polished grid/list hybrid inventory.
+
+Categories:
+
+Weapons
+Armor
+Consumables
+Quest Items
+Materials
+
+Support:
+
+drag and drop
+tooltips
+equipment comparison
+sorting
+stacking
+quick equip
+
+---
+
+# EQUIPMENT
+
+Equipment slots:
+
+Head
+Chest
+Hands
+Feet
+Main Hand
+Off Hand
+Amulet
+Ring 1
+Ring 2
+
+The character model should visually reflect major equipment changes whenever possible.
+
+---
+
+# UI
+
+The HUD should feel elegant and modern.
+
+Bottom center:
+
+Q W E R ability bar.
+
+Bottom left:
+
+Health.
+
+Bottom right:
+
+Class resource / mana.
+
+Small portrait.
+
+Buff/debuff indicators.
+
+Minimap in a corner.
+
+Quest tracker.
+
+Combat log optionally expandable.
+
+Do not directly reproduce the exact layout, icons, fonts, frames or visual assets of any existing game.
+
+Create an original UI optimized for this game.
+
+---
+
+# AUDIO
+
+Architecture must support:
+
+ambient music
+exploration music
+combat music
+boss music
+
+And spatial audio for:
+
+footsteps
+weapons
+spells
+monsters
+weather
+environment
+
+Audio intensity should dynamically change when entering combat.
+
+---
+
+# TECHNICAL REQUIREMENTS
+
+Choose the engine and architecture that best suit a beginner building this project with AI assistance.
+
+The game must have:
+
+* clean modular architecture
+* reusable components
+* data-driven abilities
+* data-driven classes
+* data-driven spells
+* data-driven enemies
+* data-driven items
+* save/load system
+* settings system
+* keybinding system
+* scalable enemy AI
+* scalable quest framework
+* scalable dialogue framework
+
+Avoid giant monolithic scripts.
+
+Use managers/services only where appropriate.
+
+Prefer components and composition.
+
+---
+
+# SAVE SYSTEM
+
+Save:
+
+player position
+class
+level
+XP
+attributes
+abilities
+spells
+equipment
+inventory
+quest progress
+world state
+NPC states
+
+Use versioned save data so updates do not immediately break older save files.
+
+---
+
+# PERFORMANCE
+
+Target initially:
+
+1920x1080
+60 FPS
+mid-range gaming PC
+
+Use:
+
+LOD systems
+occlusion
+object pooling
+optimized particles
+optimized navigation
+batched vegetation
+appropriate texture sizes
+
+Avoid premature ultra-low-level optimization, but design systems correctly from the beginning.
+
+---
+
+# DEVELOPMENT PHILOSOPHY
+
+VERY IMPORTANT:
+
+Do NOT attempt to create the entire RPG immediately.
+
+We will build it incrementally.
+
+PHASE 1:
+Playable combat prototype.
+
+PHASE 2:
+Character creation.
+
+PHASE 3:
+RPG rules.
+
+PHASE 4:
+First environment.
+
+PHASE 5:
+Enemies.
+
+PHASE 6:
+Spells and abilities.
+
+PHASE 7:
+Inventory and loot.
+
+PHASE 8:
+Dialogue and quests.
+
+PHASE 9:
+Vertical slice.
+
+PHASE 10:
+Polish and optimization.
+
+Each phase must remain playable.
+
+Never destroy working systems when implementing the next phase.
+
+---
+
+# VERSION CONTROL / SAFE DEVELOPMENT
+
+Whenever making major modifications:
+
+1. inspect existing files first
+2. understand the current architecture
+3. modify the minimum required files
+4. avoid unnecessarily rewriting working systems
+5. preserve backwards compatibility when possible
+6. test the game after changes
+
+If an error occurs:
+
+identify the root cause rather than hiding the error.
+
+---
+
+# PLACEHOLDER CONTENT
+
+For the early prototype, use placeholder geometry where necessary.
+
+Gameplay comes first.
+
+However, placeholder assets must have consistent dimensions so they can later be replaced without rebuilding gameplay systems.
+
+---
+
+# FIRST PLAYABLE PROTOTYPE
+
+Start by building ONLY:
+
+One character.
+
+One small environment.
+
+Right-click movement.
+
+One melee enemy.
+
+Basic enemy AI.
+
+Basic attack.
+
+Health.
+
+Death.
+
+Q ability.
+
+W ability.
+
+E ability.
+
+R ability.
+
+Cooldowns.
+
+Damage.
+
+Camera.
+
+Simple HUD.
+
+One loot item.
+
+The prototype should already feel satisfying to control.
+
+---
+
+# QUALITY BAR
+
+Do not treat this as a generic tutorial project.
+
+Even the prototype should include:
+
+good input responsiveness
+good animations
+clean camera movement
+impactful hit feedback
+damage feedback
+sound hooks
+VFX hooks
+polished ability indicators
+professional UI spacing
+clean code
+
+Whenever choosing between adding ten mediocre features or polishing one core feature, prioritize quality.
+
+---
+
+# IMPORTANT DEVELOPMENT RULE
+
+Before implementing a new feature, always evaluate:
+
+1. What system owns this feature?
+2. Can the feature be represented as data?
+3. Can other classes/enemies/spells reuse it?
+4. Does this create unnecessary coupling?
+5. Will this architecture still work with 100 spells and 50 enemy types?
+
+Design accordingly.
+
+---
+
+# YOUR FIRST RESPONSE
+
+Do NOT immediately generate hundreds of files.
+
+First:
+
+1. Decide which game engine and technology stack we should use.
+2. Explain the proposed project architecture.
+3. Show the folder structure.
+4. Define the gameplay systems and how they communicate.
+5. Define how the D&D-style rules layer interacts with real-time combat.
+6. Define the character/class/spell data model.
+7. Define the first vertical-slice milestone.
+8. Then begin implementing PHASE 1.
+
+Once the architecture is established, start creating the actual playable prototype.
+
+The ultimate goal is:
+
+A beautiful original isometric fantasy RPG with deep tabletop-inspired character building and tactical real-time combat, combining the strategic depth of a tabletop RPG with the responsiveness of a modern click-to-move action game.

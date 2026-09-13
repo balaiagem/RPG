@@ -1,0 +1,3 @@
+{
+ "fighter":{"id":"fighter","name":"Fighter","hitDie":10,"primaryAttributes":["strength","dexterity"],"armorProficiencies":["light","medium","heavy","shield"],"weaponProficiencies":["simple","martial"],"savingThrowProficiencies":["strength","constitution"],"startingEquipment":["warden_blade"],"classAbilities":["ember_lance","cinder_guard","binding_ash","dawnbreak"],"spellcastingProgression":null,"resources":{"prototypeFocus":100},"levelProgression":{"3":["hollow_warden_training"]},"prototypeNote":"Original ember training loadout for Phase 1. Not a complete SRD Fighter implementation."}
+}

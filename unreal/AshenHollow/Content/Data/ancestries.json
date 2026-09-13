@@ -1,0 +1,98 @@
+{
+  "human": {
+    "name": "Human",
+    "description": "Versatile travelers. +1 to every attribute.",
+    "bonuses": {
+      "strength": 1,
+      "dexterity": 1,
+      "constitution": 1,
+      "intelligence": 1,
+      "wisdom": 1,
+      "charisma": 1
+    },
+    "speed": 30,
+    "scale": 1,
+    "traits": []
+  },
+  "elf": {
+    "name": "High Elf",
+    "description": "+2 Dexterity, +1 Intelligence. Keen senses grant Perception proficiency.",
+    "bonuses": {
+      "dexterity": 2,
+      "intelligence": 1
+    },
+    "speed": 30,
+    "scale": 1.05,
+    "traits": [
+      "keen_senses"
+    ]
+  },
+  "dwarf": {
+    "name": "Hill Dwarf",
+    "description": "+2 Constitution, +1 Wisdom. Dwarven Toughness grants +1 HP per level.",
+    "bonuses": {
+      "constitution": 2,
+      "wisdom": 1
+    },
+    "speed": 25,
+    "scale": 0.82,
+    "traits": [
+      "dwarven_toughness",
+      "poison_resilience"
+    ]
+  },
+  "halfling": {
+    "name": "Lightfoot Halfling",
+    "description": "+2 Dexterity, +1 Charisma. Lucky rerolls a natural 1 once.",
+    "bonuses": {
+      "dexterity": 2,
+      "charisma": 1
+    },
+    "speed": 25,
+    "scale": 0.65,
+    "traits": [
+      "lucky"
+    ]
+  },
+  "half_orc": {
+    "name": "Half-Orc",
+    "description": "+2 Strength, +1 Constitution. Relentless Endurance prevents one defeat per long rest.",
+    "bonuses": {
+      "strength": 2,
+      "constitution": 1
+    },
+    "speed": 30,
+    "scale": 1.12,
+    "traits": [
+      "relentless_endurance",
+      "savage_attacks"
+    ]
+  },
+  "tiefling": {
+    "name": "Tiefling",
+    "description": "+2 Charisma, +1 Intelligence. Fire damage resistance.",
+    "bonuses": {
+      "charisma": 2,
+      "intelligence": 1
+    },
+    "speed": 30,
+    "scale": 1,
+    "traits": [
+      "fire_resistance"
+    ]
+  },
+  "dragonborn": {
+    "name": "Dragonborn",
+    "description": "+2 Strength, +1 Charisma. Red dragon lineage: fire resistance and a breath weapon.",
+    "bonuses": {
+      "strength": 2,
+      "charisma": 1
+    },
+    "speed": 30,
+    "scale": 1.1,
+    "traits": [
+      "fire_resistance",
+      "breath_weapon"
+    ]
+  }
+}

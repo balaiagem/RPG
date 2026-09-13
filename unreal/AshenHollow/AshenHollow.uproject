@@ -1,0 +1,14 @@
+{
+  "FileVersion": 3,
+  "EngineAssociation": "5.8",
+  "Category": "Games",
+  "Description": "Ashen Hollow — Unreal migration foundation. Gameplay port in progress.",
+  "Modules": [
+    { "Name": "AshenHollow", "Type": "Runtime", "LoadingPhase": "Default" }
+  ],
+  "Plugins": [
+    { "Name": "EnhancedInput", "Enabled": true },
+    { "Name": "GameplayAbilities", "Enabled": true },
+    { "Name": "PythonScriptPlugin", "Enabled": true, "TargetAllowList": ["Editor"] }
+  ]
+}

@@ -1,0 +1,4 @@
+{
+ "warden_blade":{"id":"warden_blade","name":"Warden's Blade","category":"Weapons","rarity":"Common","attackRange":2.1,"attackAnimation":"slash","attackSpeed":0.78,"damageDice":"1d8","damageBonus":3,"damageType":"slashing","statScaling":"strength","specialProperties":[],"slot":"Main Hand"},
+ "ember_shard":{"id":"ember_shard","name":"Ember Shard","category":"Materials","rarity":"Uncommon","description":"A warm fragment from the roots. Proof that something beneath the ruins is awake.","stackSize":99}
+}
