@@ -12,6 +12,9 @@ class USpringArmComponent;
 class UCameraComponent;
 class UAnimationAsset;
 class UAnimInstance;
+class UNiagaraSystem;
+class AAHMagicVisual;
+class UAHEquipmentComponent;
 enum class EAHHeroClass : uint8 { Fighter, Barbarian, Cleric, Wizard };
 
 /** Shared character for the turn-based SRD combat encounter. */
@@ -36,6 +39,7 @@ public:
     FAHTurnBudget Turn;
     bool bTurnActive = false;
     bool bDodging = false;
+    bool bDashing = false;
     int32 Initiative = 0;
     int32 LastDamage = 0;
     float LastDamageTime = -100.f;
@@ -44,11 +48,32 @@ public:
     bool bImpactHealing = false;
     bool bLastImpactCritical = false;
     FString Feedback;
+    FString MotionLabel=TEXT("ATACANDO");
     bool bCharacterReady = false;
     EAHHeroClass HeroClass = EAHHeroClass::Fighter;
     int32 AttackBonus = 5, DamageSides = 8, DamageModifier = 3, InitiativeBonus = 1;
     int32 ClassCharges = 2;
     bool bRaging = false;
+
+    // ── Death saves (D&D 5e downed state) ────────────────────────────────────
+    /** True when HP == 0 but death saves haven't been exhausted yet. */
+    bool bDowned = false;
+    /** True after accumulating 3 successful death saves (stable). */
+    bool bStabilized = false;
+    int32 DeathSuccesses = 0;
+    int32 DeathFailures  = 0;
+    /** World-time when a death-save roll last happened (for HUD flash). */
+    float DeathSaveRollTime = -100.f;
+    bool  bLastDeathSaveSuccess = false;
+
+    // ── Temporary HP ─────────────────────────────────────────────────────────
+    /** Absorbed before real HP; shown as a white arc overlay on the HP orb. */
+    int32 TempHP = 0;
+
+    // ── Turn timer ────────────────────────────────────────────────────────────
+    /** World-time when the current turn began (set in StartTurn, used by HUD). */
+    float TurnStartTime = -1.f;
+
     void ChooseClass(EAHHeroClass Choice);
     void UseClassAbility();
     bool CanUseClassAbility() const;
@@ -66,10 +91,23 @@ public:
     UPROPERTY(BlueprintReadOnly, Category="AH|Animation")
     bool bIsAttacking = false;
 
+    // ── Visual FX ─────────────────────────────────────────────────────────────
+    /**
+     * Optional Niagara system spawned at the character's torso when it receives
+     * a hit. Leave null to use the built-in instanced spark effect.
+     * Assign any NS_* asset in the Blueprint Details panel to upgrade to a real
+     * particle effect with zero code changes.
+     */
+    UPROPERTY(EditDefaultsOnly, Category="AH|FX")
+    TObjectPtr<UNiagaraSystem> HitFX;
+
     // ── Helpers ───────────────────────────────────────────────────────────────
-    bool IsBusy() const { return AnimationEnds > 0.f; }
-    bool CanAct() const { return IsAlive() && bTurnActive && !IsBusy(); }
-    bool IsAlive() const { return Health > 0; }
+    bool IsBusy() const    { return AnimationEnds > 0.f; }
+    bool IsAlive() const   { return Health > 0; }
+    /** True while downed but still rolling saves (not yet truly dead). */
+    bool IsDowned() const  { return bDowned && DeathFailures < 3 && !bStabilized; }
+    /** Cannot act (attack, move) — downed or dead. */
+    bool CanAct() const    { return IsAlive() && bTurnActive && !IsBusy(); }
 
     // ── Combat actions ────────────────────────────────────────────────────────
     void StartTurn();
@@ -87,9 +125,6 @@ public:
      * Called by UAHNotify_MeleeImpact when the attack animation reaches the
      * impact frame.  Resolves the pending d20 roll immediately instead of
      * waiting for the fallback timer.
-     *
-     * Safe to call from C++ notify code; if the notify has not been added to the
-     * animation asset yet, the timer fallback in ResolveImpact() fires instead.
      */
     void OnMeleeImpactNotify();
 
@@ -128,15 +163,28 @@ private:
     bool bImpactResolved = false;     // prevents double-resolution (notify + timer)
 
     UPROPERTY() TObjectPtr<AAHCharacter> PendingTarget;
+    UPROPERTY() TObjectPtr<AAHMagicVisual> MagicVisual;
     FAHDiceOutcome PendingRoll;
     UPROPERTY() TObjectPtr<UAnimationAsset> AttackAnimation;
     UPROPERTY() TObjectPtr<UAnimationAsset> AlternateAttackAnimation;
     uint32 AttackAnimationIndex = 0;
     UPROPERTY() TObjectPtr<UAnimationAsset> DeathAnimation;
     UPROPERTY() TObjectPtr<UAnimationAsset> HitAnimation;
+    UPROPERTY() TObjectPtr<UAnimationAsset> CastAnimation;
+    UPROPERTY() TObjectPtr<UAnimationAsset> HealAnimation;
+    UPROPERTY() TObjectPtr<UAnimationAsset> RageAnimation;
+    UPROPERTY() TObjectPtr<UAnimationAsset> GuardAnimation;
+    UPROPERTY() TObjectPtr<UAnimationAsset> EvadeAnimation;
+    UPROPERTY() TArray<TObjectPtr<UAnimationAsset>> WeaponAnimations;
+    UPROPERTY() TObjectPtr<UAHEquipmentComponent> Equipment;
     UPROPERTY() TSubclassOf<UAnimInstance> LocomotionClass;
 
     void PlayAttack();
+    void PlayGesture(UAnimationAsset* Asset);
+    /** Roll one d20 death save; updates counts; may revive or transition to true death. */
+    void RollDeathSave();
+    void CompleteDeathSaveTurn();
+    FTimerHandle DeathSaveTimer;
 
 protected:
     virtual void BeginPlay() override;

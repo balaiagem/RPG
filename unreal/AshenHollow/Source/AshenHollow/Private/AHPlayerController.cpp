@@ -67,10 +67,10 @@ void AAHPlayerController::SetupInputComponent()
 void AAHPlayerController::MoveToCursor()
 {
     FHitResult Hit;
-    if (!GetPawn() || !GetHitResultUnderCursor(ECC_Visibility, false, Hit)) return;
     auto* Hero = Cast<AAHCharacter>(GetPawn());
     if (!Hero || !Hero->CanAct()) return;
     if (auto* HUD = Cast<AAHCombatHUD>(GetHUD()); HUD && HUD->IsPointerOverInterface()) return;
+    if(!GetHitResultUnderCursor(ECC_Visibility,false,Hit)) { Hero->Feedback=TEXT("Clique em uma superficie do cenario"); return; }
     if (auto* Enemy = Cast<AAHCharacter>(Hit.GetActor()); Enemy && Enemy->bEnemy && Enemy->IsAlive())
     {
         if (!Hero->Turn.bAction) { Hero->Feedback=TEXT("Action already spent"); return; }
@@ -82,7 +82,12 @@ void AAHPlayerController::MoveToCursor()
     if (Hero->Turn.Movement<=1.f) { Hero->Feedback=TEXT("No movement remaining"); return; }
     auto* Nav = FNavigationSystem::GetCurrent<UNavigationSystemV1>(GetWorld());
     FNavLocation Destination;
-    if (!Nav || !Nav->ProjectPointToNavigation(Hit.ImpactPoint, Destination, FVector(80, 80, 150))) return;
+    if (!Nav || !Nav->ProjectPointToNavigation(Hit.ImpactPoint, Destination, FVector(80, 80, 150)))
+    {
+        Hero->Feedback=TEXT("Destino fora da area navegavel");
+        UE_LOG(LogTemp,Display,TEXT("AH_MOVE_REJECT nav=%d hit=%s component=%s position=%s"),Nav!=nullptr,*GetNameSafe(Hit.GetActor()),*GetNameSafe(Hit.GetComponent()),*Hit.ImpactPoint.ToString());
+        return;
+    }
     UAIBlueprintHelperLibrary::SimpleMoveToLocation(this, Destination.Location);
     DrawDebugCircle(GetWorld(), Destination.Location + FVector(0, 0, 5), 35, 32,
         FColor(220, 176, 90), false, 0.7f, 0, 2, FVector::ForwardVector, FVector::RightVector, false);

@@ -39,15 +39,28 @@ void AAHGameMode::Tick(float DeltaSeconds)
         Hero->AddLog(FString::Printf(TEXT("Initiative: you %d / foe %d"),Hero->Initiative,Order[0]==Hero?Order[1]->Initiative:Order[0]->Initiative));
     }
     if (!bStarted || bFinished) return;
-    bool HeroAlive=false, EnemyAlive=false;
-    for(const auto& Character:Order) { if(Character->bEnemy) EnemyAlive|=Character->IsAlive(); else HeroAlive|=Character->IsAlive() || Character->bDowned; }
-    if(!HeroAlive || !EnemyAlive)
+
+    // Combat ends when: hero is truly dead (failed all saves) OR all enemies dead
+    bool HeroStillFighting=false, EnemyAlive=false;
+    for(const auto& Character:Order)
+    {
+        if(Character->bEnemy)
+            EnemyAlive |= Character->IsAlive();
+        else
+            // Hero is still in fight if alive, downed (rolling saves), or stabilized (may be revived)
+            HeroStillFighting |= Character->IsAlive() || Character->IsDowned() || Character->bStabilized;
+    }
+    if(!HeroStillFighting || !EnemyAlive)
     {
         bFinished=true;
         for(const auto& Character:Order) Character->FinishTurn();
         return;
     }
+
     auto* Active=ActiveCharacter();
+    // Don't auto-end turn while a character is rolling death saves (timer handles it)
+    if(Active && Active->bDowned) return;
+
     if(Active && Active->bEnemy && !Active->IsBusy())
     {
         const float Elapsed=GetWorld()->GetTimeSeconds()-TurnStarted;
@@ -57,10 +70,15 @@ void AAHGameMode::Tick(float DeltaSeconds)
 }
 bool AAHGameMode::EndTurn(AAHCharacter* Requester)
 {
-    if(!bStarted || bFinished || Requester!=ActiveCharacter() || Requester->IsBusy()) return false;
+    // Block EndTurn while downed — the death-save timer calls FinishTurn directly
+    if(!bStarted || bFinished || Requester!=ActiveCharacter() || Requester->IsBusy() || Requester->bDowned) return false;
     Requester->FinishTurn();
     ActiveIndex=(ActiveIndex+1)%Order.Num();
     if(ActiveIndex==0) ++Round;
+    // Skip truly-dead combatants in the initiative order
+    int32 Safety=Order.Num();
+    while(Safety-->0 && ActiveCharacter() && !ActiveCharacter()->IsAlive() && !ActiveCharacter()->IsDowned() && !ActiveCharacter()->bStabilized)
+        ActiveIndex=(ActiveIndex+1)%Order.Num();
     ActiveCharacter()->StartTurn();
     TurnStarted=GetWorld()->GetTimeSeconds();
     return true;

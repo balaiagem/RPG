@@ -7,10 +7,12 @@ public class AshenHollow : ModuleRules
         PCHUsage = PCHUsageMode.UseExplicitOrSharedPCHs;
         PublicDependencyModuleNames.AddRange(new string[] {
             "Core", "CoreUObject", "Engine", "InputCore", "EnhancedInput",
-            "GameplayAbilities", "GameplayTags", "GameplayTasks", "UMG"
+            "GameplayAbilities", "GameplayTags", "GameplayTasks", "UMG",
+            "Niagara"
         });
         PrivateDependencyModuleNames.AddRange(new string[] {
-            "Json", "JsonUtilities", "NavigationSystem", "AIModule", "Slate", "SlateCore", "RenderCore", "AnimGraphRuntime"
+            "Json", "JsonUtilities", "NavigationSystem", "AIModule",
+            "Slate", "SlateCore", "RenderCore", "AnimGraphRuntime"
         });
     }
 }

@@ -10,11 +10,15 @@
 #include "Animation/AnimInstance.h"
 #include "AHNotify_MeleeImpact.h"
 #include "AHAnimInstance.h"
+#include "AHMagicVisual.h"
+#include "AHEquipmentComponent.h"
+#include "AHCombatBurst.h"
 #include "AHGameMode.h"
 #include "AIController.h"
 #include "Kismet/GameplayStatics.h"
 #include "NavigationSystem.h"
 #include "EngineUtils.h"
+#include "NiagaraFunctionLibrary.h"
 
 AAHCharacter::AAHCharacter()
 {
@@ -23,6 +27,7 @@ AAHCharacter::AAHCharacter()
     bUseControllerRotationYaw = false;
 
     AbilitySystem = CreateDefaultSubobject<UAbilitySystemComponent>(TEXT("AbilitySystem"));
+    Equipment = CreateDefaultSubobject<UAHEquipmentComponent>(TEXT("Equipment"));
 
     GetCapsuleComponent()->InitCapsuleSize(42.f, 96.f);
 
@@ -40,6 +45,10 @@ AAHCharacter::AAHCharacter()
     DeathAnimation  = Death.Object;
     static ConstructorHelpers::FObjectFinder<UAnimationAsset> Hit(TEXT("/Game/Characters/Mannequins/Anims/Rifle/HitReact/MM_HitReact_Front_Lgt_01"));
     HitAnimation = Hit.Object;
+    static ConstructorHelpers::FObjectFinder<UAnimationAsset> CastClip(TEXT("/Game/AshenHollow/Animation/AH_Cast")),HealClip(TEXT("/Game/AshenHollow/Animation/AH_Heal")),RageClip(TEXT("/Game/AshenHollow/Animation/AH_Rage")),GuardClip(TEXT("/Game/AshenHollow/Animation/AH_Guard")),EvadeClip(TEXT("/Game/AshenHollow/Animation/AH_Evade"));
+    CastAnimation=CastClip.Object; HealAnimation=HealClip.Object; RageAnimation=RageClip.Object; GuardAnimation=GuardClip.Object; EvadeAnimation=EvadeClip.Object;
+    static ConstructorHelpers::FObjectFinder<UAnimationAsset> Sword(TEXT("/Game/AshenHollow/Animation/AH_SwordSlash")),Axe(TEXT("/Game/AshenHollow/Animation/AH_AxeCleave")),Mace(TEXT("/Game/AshenHollow/Animation/AH_MaceStrike")),Staff(TEXT("/Game/AshenHollow/Animation/AH_StaffStrike"));
+    WeaponAnimations={Sword.Object,Axe.Object,Mace.Object,Staff.Object};
     GetMesh()->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 
     CameraBoom = CreateDefaultSubobject<USpringArmComponent>(TEXT("CameraBoom"));
@@ -80,22 +89,112 @@ void AAHCharacter::BecomeEnemy()
     AttackBonus=4; DamageSides=6; DamageModifier=2; InitiativeBonus=2;
     GetCharacterMovement()->MaxWalkSpeed = 330.f;
     SpawnDefaultController();
+    Equipment->Configure(EAHHeroClass::Fighter);
 }
 
 // ── Turn management ───────────────────────────────────────────────────────────
 
 void AAHCharacter::StartTurn()
 {
+    TurnStartTime = GetWorld()->GetTimeSeconds();
+
+    // ── Downed: roll death save instead of acting ─────────────────────────────
+    if(bDowned)
+    {
+        bTurnActive = true;
+        if(!bStabilized) RollDeathSave();
+        else GetWorldTimerManager().SetTimer(DeathSaveTimer, this, &AAHCharacter::CompleteDeathSaveTurn, 1.8f, false);
+        // FinishTurn is called via timer from RollDeathSave after a short pause
+        return;
+    }
+
     Turn.Reset();
     if(bRaging && --RageTurns<=0) bRaging=false;
-    bTurnActive  = true;  // Enemy preparation delay is handled by Tick, after activation.
+    bTurnActive  = true;
     bDodging     = false;
+    bDashing     = false;
     PreviousLocation = GetActorLocation();
-    Feedback = bEnemy ? TEXT("Enemy turn") : TEXT("Your turn - choose an action");
+    Feedback = bEnemy ? TEXT("Turno do inimigo") : TEXT("Seu turno - escolha uma acao");
+}
+
+void AAHCharacter::RollDeathSave()
+{
+    const int32 Roll = Dice.RandRange(1, 20);
+    DeathSaveRollTime = GetWorld()->GetTimeSeconds();
+
+    if(Roll == 20)
+    {
+        // Natural 20: revive with 1 HP
+        bDowned        = false;
+        bStabilized    = false;
+        DeathSuccesses = 0;
+        DeathFailures  = 0;
+        Health         = 1;
+        bLastDeathSaveSuccess = true;
+        GetCharacterMovement()->SetMovementMode(EMovementMode::MOVE_Walking);
+        GetCapsuleComponent()->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
+        GetMesh()->SetAnimationMode(EAnimationMode::AnimationBlueprint);
+        GetMesh()->SetAnimInstanceClass(LocomotionClass);
+        AddLog(TEXT("Milagre! Salvaguarda de morte 20 - recuperado com 1 PV!"));
+        Feedback = TEXT("Recuperado com 1 PV!");
+        // End the turn immediately (can't act this turn)
+        bTurnActive=false;
+        GetWorldTimerManager().SetTimer(DeathSaveTimer, this, &AAHCharacter::CompleteDeathSaveTurn, 1.8f, false);
+        return;
+    }
+
+    if(Roll == 1)
+    {
+        // Natural 1: two failures
+        DeathFailures += 2;
+        bLastDeathSaveSuccess = false;
+        AddLog(TEXT("Salvaguarda de morte: 1 critico - 2 falhas!"));
+    }
+    else if(Roll >= 10)
+    {
+        ++DeathSuccesses;
+        bLastDeathSaveSuccess = true;
+        AddLog(FString::Printf(TEXT("Salvaguarda de morte: %d - sucesso (%d/3)"), Roll, DeathSuccesses));
+    }
+    else
+    {
+        ++DeathFailures;
+        bLastDeathSaveSuccess = false;
+        AddLog(FString::Printf(TEXT("Salvaguarda de morte: %d - falha (%d/3)"), Roll, DeathFailures));
+    }
+
+    if(DeathSuccesses >= 3)
+    {
+        bStabilized = true;
+        AddLog(TEXT("Estabilizado - sem mais salvaguardas."));
+        Feedback = TEXT("Estabilizado.");
+    }
+    else if(DeathFailures >= 3)
+    {
+        // Truly dead — play death animation and disable everything
+        bDowned = false;
+        AddLog(TEXT("3 falhas - personagem morreu."));
+        Feedback = TEXT("Morto.");
+        if(IsValid(MagicVisual)) MagicVisual->Destroy(); MagicVisual=nullptr;
+        GetCharacterMovement()->DisableMovement();
+        GetCapsuleComponent()->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+        if(DeathAnimation) GetMesh()->PlayAnimation(DeathAnimation, false);
+        PendingTarget=nullptr; ImpactAt=-1.f; bImpactResolved=true; AnimationEnds=0.f; bIsAttacking=false;
+    }
+
+    // End turn after 1.8 s so the HUD has time to show the result
+    GetWorldTimerManager().SetTimer(DeathSaveTimer, this, &AAHCharacter::CompleteDeathSaveTurn, 1.8f, false);
+}
+
+void AAHCharacter::CompleteDeathSaveTurn()
+{
+    if(auto* Mode=Cast<AAHGameMode>(GetWorld()->GetAuthGameMode())) Mode->EndTurn(this);
+    else FinishTurn();
 }
 
 void AAHCharacter::FinishTurn()
 {
+    GetWorldTimerManager().ClearTimer(DeathSaveTimer);
     if(bRaging && !bAttackedSinceTurnEnd && !bDamagedSinceTurnEnd) bRaging=false;
     bAttackedSinceTurnEnd=false; bDamagedSinceTurnEnd=false;
     bTurnActive = false;
@@ -115,7 +214,8 @@ void AAHCharacter::Tick(float DeltaSeconds)
 {
     Super::Tick(DeltaSeconds);
     const float Now = GetWorld()->GetTimeSeconds();
-    if (!IsAlive()) return;
+
+    if (!IsAlive() && !IsDowned()) return;
 
     if (!bEnemy)
     {
@@ -146,15 +246,13 @@ void AAHCharacter::Tick(float DeltaSeconds)
         if (GetMesh()->GetAnimInstance())
             GetMesh()->GetAnimInstance()->SetRootMotionMode(ERootMotionMode::RootMotionFromMontagesOnly);
 
-        // Fallback: if the AH_MeleeImpact notify was NOT added to the animation
-        // yet, ImpactAt is still pending.  Fire it now rather than never.
         if (!bImpactResolved && ImpactAt > 0.f)
         {
             ResolveImpact();
         }
     }
 
-    // ── Fallback impact timer (fires before animation end if timing allows) ───
+    // ── Fallback impact timer ─────────────────────────────────────────────────
     if (!bImpactResolved && PendingTarget && ImpactAt > 0.f && Now >= ImpactAt)
     {
         ResolveImpact();
@@ -184,8 +282,7 @@ void AAHCharacter::Tick(float DeltaSeconds)
     }
     PreviousLocation = GetActorLocation();
 
-    // Clamp walk speed to remaining budget so the character decelerates naturally.
-    const float MaxSpeed = bEnemy ? 330.f : 480.f;
+    const float MaxSpeed = bEnemy ? 330.f : bDashing ? 650.f : 480.f;
     GetCharacterMovement()->MaxWalkSpeed =
         (bTurnActive && !IsBusy())
         ? FMath::Min(MaxSpeed, Turn.Movement / FMath::Max(DeltaSeconds, .001f))
@@ -214,8 +311,9 @@ void AAHCharacter::Tick(float DeltaSeconds)
 
 void AAHCharacter::PlayAttack()
 {
-    auto* Sequence = Cast<UAnimSequenceBase>((AttackAnimationIndex++ % 2 && AlternateAttackAnimation)
-        ? AlternateAttackAnimation.Get() : AttackAnimation.Get());
+    MotionLabel=PendingSpellDamage>0?TEXT("CONJURANDO"):TEXT("ATACANDO");
+    UAnimationAsset* Clip=PendingSpellDamage>0?CastAnimation.Get():WeaponAnimations[static_cast<uint8>(HeroClass)].Get();
+    auto* Sequence=Cast<UAnimSequenceBase>(Clip?Clip:AttackAnimation.Get());
     if (Sequence && GetMesh()->GetAnimInstance())
     {
         GetMesh()->GetAnimInstance()->SetRootMotionMode(ERootMotionMode::IgnoreRootMotion);
@@ -226,14 +324,34 @@ void AAHCharacter::PlayAttack()
     const float Length = Sequence ? Sequence->GetPlayLength() : 0.9f;
     AnimationEnds   = GetWorld()->GetTimeSeconds() + FMath::Max(0.9f, Length);
     ImpactAt        = GetWorld()->GetTimeSeconds() + Length * ImpactFraction;
-    // An authored impact notify owns timing. Only fall back at the end if it
-    // fails to arrive; the generic 35% timer must not preempt a later notify.
     if (Sequence && Sequence->Notifies.ContainsByPredicate([](const FAnimNotifyEvent& Event)
         { return Event.Notify && Event.Notify->IsA<UAHNotify_MeleeImpact>(); }))
         ImpactAt = AnimationEnds;
     bIsAttacking    = true;
     bImpactResolved = false;
+    if(PendingSpellDamage>0 && PendingTarget && GetNetMode()!=NM_DedicatedServer)
+    {
+        float Travel=Length*ImpactFraction;
+        if(Sequence)
+            for(const FAnimNotifyEvent& Event:Sequence->Notifies)
+                if(Event.Notify && Event.Notify->IsA<UAHNotify_MeleeImpact>())
+                { Travel=Event.GetTriggerTime(); break; }
+        MagicVisual=GetWorld()->SpawnActor<AAHMagicVisual>();
+        if(MagicVisual) MagicVisual->Initialize(GetMesh()->GetSocketLocation(TEXT("hand_r")),PendingTarget,Travel);
+    }
+}
 
+void AAHCharacter::PlayGesture(UAnimationAsset* Asset)
+{
+    MotionLabel=Asset==HealAnimation?TEXT("CURANDO"):Asset==RageAnimation?TEXT("FURIA"):Asset==GuardAnimation?TEXT("DEFENDENDO"):Asset==EvadeAnimation?TEXT("EVADINDO"):TEXT("CONJURANDO");
+    auto* Sequence=Cast<UAnimSequenceBase>(Asset);
+    if(!Sequence || !GetMesh()->GetAnimInstance()) return;
+    if(GetController()) GetController()->StopMovement();
+    GetCharacterMovement()->StopMovementImmediately();
+    GetMesh()->GetAnimInstance()->SetRootMotionMode(ERootMotionMode::IgnoreRootMotion);
+    GetMesh()->GetAnimInstance()->PlaySlotAnimationAsDynamicMontage(Sequence,TEXT("DefaultSlot"),.12f,.2f,1.f,1);
+    AnimationEnds=GetWorld()->GetTimeSeconds()+Sequence->GetPlayLength();
+    bIsAttacking=true; bImpactResolved=true; ImpactAt=-1.f;
 }
 
 bool AAHCharacter::TryAttack(AAHCharacter* Target)
@@ -279,16 +397,17 @@ bool AAHCharacter::TryAttack(AAHCharacter* Target)
 
 void AAHCharacter::OnMeleeImpactNotify()
 {
-    // Called by UAHNotify_MeleeImpact — frame-perfect path.
-    if (bImpactResolved) return;   // guard against duplicate calls
+    if (bImpactResolved) return;
     if (PendingTarget) UE_LOG(LogTemp, Display, TEXT("AH_CONTACT_NOTIFY %s"), bEnemy ? TEXT("ENEMY") : TEXT("HERO"));
     bImpactResolved = true;
-    ImpactAt = -1.f;               // cancel the fallback timer
+    ImpactAt = -1.f;
     ResolveImpact();
 }
 
 void AAHCharacter::ResolveImpact()
 {
+    if(IsValid(MagicVisual)) MagicVisual->Destroy();
+    MagicVisual=nullptr;
     bImpactResolved = true;
     ImpactAt = -1.f;
 
@@ -314,7 +433,6 @@ void AAHCharacter::ResolveImpact()
 
     auto Result = PendingRoll;
 
-    // Cancel the attack if the target moved out of range or behind cover.
     FHitResult Obstacle;
     FCollisionQueryParams Query(SCENE_QUERY_STAT(ImpactSight), false, this);
     Query.AddIgnoredActor(Target);
@@ -336,6 +454,11 @@ void AAHCharacter::ResolveImpact()
         Target->ReceiveHit(Result.Damage);
         Result.Damage=Target->LastDamage;
         Viewer->LastRoll=Result;
+    }
+    else if(!Target->IsBusy())
+    {
+        Target->PlayGesture(Target->bDodging?Target->GuardAnimation.Get():Target->EvadeAnimation.Get());
+        AAHCombatBurst::Emit(GetWorld(),Target->GetActorLocation()+FVector(0,0,25),EAHBurst::Guard);
     }
     Target->bImpactHealing = false;
     Target->bLastImpactCritical = Result.bCritical;
@@ -362,20 +485,44 @@ void AAHCharacter::ResolveImpact()
 
 void AAHCharacter::ReceiveHit(int32 Damage, bool bPhysical)
 {
-    if (!IsAlive() || Damage <= 0) return;
+    if ((!IsAlive() && !bDowned) || Damage <= 0) return;
     if(bRaging && bPhysical) Damage/=2;
     bDamagedSinceTurnEnd=true;
-    LastDamage     = FMath::Min(Health, Damage);
     LastDamageTime = GetWorld()->GetTimeSeconds();
-    Health         = FMath::Max(0, Health - Damage);
+
+    // ── TempHP absorbs damage first ───────────────────────────────────────────
+    if(TempHP > 0)
+    {
+        const int32 Absorbed = FMath::Min(TempHP, Damage);
+        TempHP  -= Absorbed;
+        Damage  -= Absorbed;
+        if(Damage <= 0)
+        {
+            LastDamage = 0;
+            ImpactText = TEXT("BLOQUEADO");
+            ImpactTextTime = LastDamageTime;
+            bImpactHealing = false; bLastImpactCritical = false;
+            const FVector HitOrigin=GetActorLocation()+FVector(0,0,35);
+            if(HitFX) UNiagaraFunctionLibrary::SpawnSystemAtLocation(GetWorld(),HitFX,HitOrigin,GetActorRotation());
+            else AAHCombatBurst::Emit(GetWorld(),HitOrigin,bPhysical?EAHBurst::Steel:EAHBurst::Force);
+            return;
+        }
+    }
+
+    // ── Apply to real HP ──────────────────────────────────────────────────────
+    LastDamage = FMath::Min(Health, Damage);
+    Health     = FMath::Max(0, Health - Damage);
     ImpactText = FString::Printf(TEXT("-%d"), LastDamage);
     ImpactTextTime = LastDamageTime;
     bImpactHealing = false;
     bLastImpactCritical = false;
+    const FVector HitOrigin=GetActorLocation()+FVector(0,0,35);
+    if(HitFX) UNiagaraFunctionLibrary::SpawnSystemAtLocation(GetWorld(),HitFX,HitOrigin,GetActorRotation());
+    else AAHCombatBurst::Emit(GetWorld(),HitOrigin,bPhysical?EAHBurst::Steel:EAHBurst::Force);
+
     if (IsAlive())
     {
-        // Cosmetic recoil does not displace the capsule or spend movement.
-        // Do not interrupt a committed attack with an incoming reaction.
+        // ── Cosmetic hit animation ────────────────────────────────────────────
         if (!bIsAttacking)
             if (auto* Anim = GetMesh()->GetAnimInstance())
                 if (auto* Sequence = Cast<UAnimSequenceBase>(HitAnimation))
@@ -387,21 +534,49 @@ void AAHCharacter::ReceiveHit(int32 Damage, bool bPhysical)
         return;
     }
 
-    FinishTurn();
-    PendingTarget   = nullptr;
-    ImpactAt        = -1.f;
-    bImpactResolved = true;
-    AnimationEnds   = 0.f;
-    bIsAttacking    = false;
-    GetCharacterMovement()->DisableMovement();
-    GetCapsuleComponent()->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-    if (DeathAnimation) GetMesh()->PlayAnimation(DeathAnimation, false);
+    // ── HP reached 0: transition to downed state (D&D death saves) ───────────
+    if(!bDowned)
+    {
+        bDowned        = true;
+        bStabilized    = false;
+        DeathSuccesses = 0;
+        DeathFailures  = 0;
+        bIsAttacking   = false;
+        AnimationEnds  = 0.f;
+        FinishTurn();
+        PendingTarget  = nullptr;
+        ImpactAt       = -1.f;
+        bImpactResolved= true;
+        if(IsValid(MagicVisual)) MagicVisual->Destroy(); MagicVisual=nullptr;
+        // Play collapse / fall animation; do NOT disable movement yet so we can still be targeted
+        if (DeathAnimation) GetMesh()->PlayAnimation(DeathAnimation, false);
+        AddLog(TEXT("Nocauteado! Salvaguardas de morte a seguir."));
+        Feedback = TEXT("Nocauteado - role salvaguardas de morte");
+    }
+    else
+    {
+        // Hit while already downed = extra failure
+        ++DeathFailures;
+        if(bStabilized) DeathSuccesses=0;
+        bStabilized=false;
+        AddLog(TEXT("Atingido enquanto nocauteado - falha adicional!"));
+        if(DeathFailures >= 3)
+        {
+            bDowned = false;
+            GetCharacterMovement()->DisableMovement();
+            GetCapsuleComponent()->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+            if(IsValid(MagicVisual)) MagicVisual->Destroy(); MagicVisual=nullptr;
+            AddLog(TEXT("Morto."));
+        }
+    }
 }
 
 void AAHCharacter::Dodge()
 {
     if (!CanAct() || !Turn.SpendAction()) return;
     bDodging = true;
+    PlayGesture(GuardAnimation);
+    AAHCombatBurst::Emit(GetWorld(),GetActorLocation(),EAHBurst::Guard);
     Feedback = TEXT("Dodging until your next turn");
     AddLog(TEXT("Dodge: incoming attacks have disadvantage"));
 }
@@ -410,6 +585,8 @@ void AAHCharacter::Dash()
 {
     if (!CanAct() || !Turn.SpendAction()) return;
     Turn.Movement += 900.f;
+    bDashing=true;
+    AAHCombatBurst::Emit(GetWorld(),GetActorLocation()-FVector(0,0,60),EAHBurst::Guard);
     Feedback = TEXT("Dash: +9 m movement");
 }
 
@@ -420,6 +597,8 @@ void AAHCharacter::SecondWind()
     bSecondWindUsed = true;
     const int32 Healing = FMath::Min(MaxHealth - Health, Dice.RandRange(1, 10) + 1);
     Health += Healing;
+    PlayGesture(HealAnimation);
+    AAHCombatBurst::Emit(GetWorld(),GetActorLocation()-FVector(0,0,45),EAHBurst::Heal);
     ImpactText = FString::Printf(TEXT("+%d PV"), Healing);
     ImpactTextTime = GetWorld()->GetTimeSeconds();
     bImpactHealing = true;
@@ -434,6 +613,8 @@ void AAHCharacter::CheckArcana()
     LastRoll      = UAHDiceRules::RollCheck(Dice, 1, 12);
     LastRollLabel = TEXT("ARCANA / ABILITY CHECK");
     LastRollTime  = GetWorld()->GetTimeSeconds();
+    PlayGesture(CastAnimation);
+    AAHCombatBurst::Emit(GetWorld(),GetActorLocation()+FVector(0,0,20),EAHBurst::Force);
     AddLog(FString::Printf(TEXT("Arcana: %d + 1 = %d / DC 12"),
         LastRoll.NaturalRoll, LastRoll.Total));
 }
@@ -458,6 +639,7 @@ void AAHCharacter::ChooseClass(EAHHeroClass Choice)
     case EAHHeroClass::Wizard: MaxHealth=8; ArmorClass=12; AttackBonus=2; DamageSides=6; DamageModifier=0; InitiativeBonus=2; break;
     }
     Health=MaxHealth; bCharacterReady=true;
+    Equipment->Configure(Choice);
     Feedback=ClassName(Choice)+TEXT(" / nivel 1");
 }
 FString AAHCharacter::ClassAbilityName() const
@@ -488,18 +670,28 @@ bool AAHCharacter::CanUseClassAbility() const
 }
 void AAHCharacter::UseClassAbility()
 {
-    if(!CanUseClassAbility()) return;
+    if(!CanUseClassAbility())
+    {
+        if(CanAct() && (HeroClass==EAHHeroClass::Fighter || HeroClass==EAHHeroClass::Cleric) && Health>=MaxHealth)
+            Feedback=TEXT("Vida cheia: a cura nao e necessaria. Voce pode mover ou atacar.");
+        return;
+    }
     if(HeroClass==EAHHeroClass::Fighter) { SecondWind(); return; }
     if(HeroClass==EAHHeroClass::Barbarian)
     {
         Turn.SpendBonus(); --ClassCharges; bRaging=true; RageTurns=10;
-        Feedback=TEXT("Furia ativa: +2 dano e resistencia fisica"); AddLog(Feedback); return;
+        TempHP = FMath::Max(TempHP, 5);  // Barbarians gain 5 temp HP when raging
+        PlayGesture(RageAnimation);
+        AAHCombatBurst::Emit(GetWorld(),GetActorLocation()-FVector(0,0,45),EAHBurst::Rage);
+        Feedback=TEXT("Furia ativa: +2 dano, resistencia fisica e 5 PV temporarios"); AddLog(Feedback); return;
     }
     if(HeroClass==EAHHeroClass::Cleric)
     {
         Turn.SpendAction(); --ClassCharges;
         const int32 Amount=FMath::Min(MaxHealth-Health,Dice.RandRange(1,8)+3);
         Health+=Amount; ImpactText=FString::Printf(TEXT("+%d PV"),Amount);
+        PlayGesture(HealAnimation);
+        AAHCombatBurst::Emit(GetWorld(),GetActorLocation()-FVector(0,0,45),EAHBurst::Heal);
         ImpactTextTime=GetWorld()->GetTimeSeconds(); bImpactHealing=true; bLastImpactCritical=false;
         Feedback=TEXT("Curar Ferimentos: ")+ImpactText; AddLog(Feedback); return;
     }
