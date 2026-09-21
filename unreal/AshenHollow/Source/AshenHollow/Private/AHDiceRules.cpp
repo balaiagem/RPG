@@ -10,19 +10,39 @@ int32 UAHDiceRules::ProficiencyBonus(const int32 Level)
     return 2 + (FMath::Clamp(Level, 1, 20) - 1) / 4;
 }
 
-int32 UAHDiceRules::RollD20(FRandomStream& Random, const int32 Advantage)
+int32 UAHDiceRules::RollD20Detailed(FRandomStream& Random, const int32 Advantage,
+    const bool bLucky, int32& OutDiscarded, bool& bOutLuckyFired)
 {
-    const int32 First = Random.RandRange(1, 20);
+    OutDiscarded = 0;
+    bOutLuckyFired = false;
+    auto Roll=[&]()
+    {
+        const int32 Value=Random.RandRange(1,20);
+        if(bLucky && Value==1) { bOutLuckyFired=true; return Random.RandRange(1,20); }
+        return Value;
+    };
+    const int32 First = Roll();
     if (Advantage == 0) return First;
-    const int32 Second = Random.RandRange(1, 20);
+    const int32 Second = Roll();
+    OutDiscarded = Advantage > 0 ? FMath::Min(First, Second) : FMath::Max(First, Second);
     return Advantage > 0 ? FMath::Max(First, Second) : FMath::Min(First, Second);
 }
 
+int32 UAHDiceRules::RollD20(FRandomStream& Random, const int32 Advantage, const bool bLucky)
+{
+    int32 Discarded=0; bool bLuckyFired=false;
+    return RollD20Detailed(Random, Advantage, bLucky, Discarded, bLuckyFired);
+}
+
 FAHDiceOutcome UAHDiceRules::RollCheck(FRandomStream& Random, const int32 Modifier,
-    const int32 DifficultyClass, const int32 Advantage)
+    const int32 DifficultyClass, const int32 Advantage, const bool bLucky)
 {
     FAHDiceOutcome Result;
-    Result.NaturalRoll = RollD20(Random, Advantage);
+    int32 Discarded=0; bool bLuckyFired=false;
+    Result.NaturalRoll  = RollD20Detailed(Random, Advantage, bLucky, Discarded, bLuckyFired);
+    Result.DiscardedRoll= Discarded;
+    Result.Advantage    = FMath::Clamp(Advantage, -1, 1);
+    Result.bLuckyReroll = bLuckyFired;
     Result.Modifier = Modifier;
     Result.Total = Result.NaturalRoll + Modifier;
     Result.Target = DifficultyClass;
@@ -33,9 +53,9 @@ FAHDiceOutcome UAHDiceRules::RollCheck(FRandomStream& Random, const int32 Modifi
 
 FAHDiceOutcome UAHDiceRules::RollAttack(FRandomStream& Random, const int32 AttackBonus,
     const int32 ArmorClass, const int32 DiceCount, const int32 DiceSides,
-    const int32 DamageBonus, const int32 Advantage)
+    const int32 DamageBonus, const int32 Advantage, const bool bLucky)
 {
-    FAHDiceOutcome Result = RollCheck(Random, AttackBonus, ArmorClass, Advantage);
+    FAHDiceOutcome Result = RollCheck(Random, AttackBonus, ArmorClass, Advantage,bLucky);
     Result.bCritical = Result.NaturalRoll == 20;
     Result.bSuccess = Result.bCritical || (Result.NaturalRoll != 1 && Result.Total >= ArmorClass);
     if (!Result.bSuccess) return Result;

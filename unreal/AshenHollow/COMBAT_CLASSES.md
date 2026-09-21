@@ -71,3 +71,103 @@ As fontes Cinzel fornecidas no projeto têm fallback de carregamento em runtime 
 `SetStaticMesh` atualiza a navegação mesmo antes do registro de um componente. Criar a arma e só depois desabilitar sua influência na navegação deixava geometria transitória que invalidava o caminho sob o personagem. `AHEquipmentComponent` agora desabilita navegação e colisão antes de atribuir a malha. A mesma ordem é aplicada aos componentes de efeitos. Não foi necessário alterar o mapa ou teletransportar o personagem.
 
 O teste com as quatro classes equipadas passou em `Saved/Automation/Navigation-20260914-225138/index.json`. A regressão também verifica usar a habilidade de cada classe e caminhar novamente quando o gesto e os efeitos terminam.
+
+### Validação de navegação e iniciativa — 20/09/2026
+
+O teste existente passou antes das alterações (`Navigation-20260920-180817`, 39,220 s). A cobertura foi ampliada para executar a inicialização de iniciativa do GameMode, rejeitar Disparada fora do turno do jogador, encerrar o turno pelo controlador e conferir a restauração de ação, bônus e 900 cm. Também percorre uma rota mais longa que os 120 cm restantes e verifica a parada no limite.
+
+Build Development Editor: aprovado em 28,98 s, sem avisos ou erros de compilação. Teste `AshenHollow.Navigation.AllClasses` em `/Game/AshenHollow/Maps/Courtyard`, `-game -NullRHI`: 1 aprovado, 0 falhas, 0 avisos, 0 pendentes, duração 51,238625 s. Relatório: `Saved/Automation/Navigation-20260920-180953/index.json`.
+
+| Classe | Iniciativa herói / inimigo | Primeiro | Deslocamento equipado | Limite percorrido / saldo |
+|---|---|---|---|---|
+| Guerreiro | 7 / 6 | Herói | 204,0 cm | 120,00 / 0,00 cm |
+| Bárbaro | 6 / 10 | Inimigo | 204,0 cm | 120,00 / 0,00 cm |
+| Clérigo | 2 / 21 | Inimigo | 204,0 cm | 120,00 / 0,00 cm |
+| Mago | 16 / 10 | Herói | 204,0 cm | 120,00 / 0,00 cm |
+
+As quatro classes voltaram a caminhar depois da habilidade e recuperaram 9 m no turno seguinte. A passagem automática após estabilização também passou. Nenhuma nova falha de gameplay foi reproduzida; esta rodada alterou a cobertura do teste, preservando a correção anterior das armas. O teste usa o controlador real e o sistema de caminhos, mas não injeta cliques físicos nem valida renderização.
+
+## Reações e ataques de oportunidade
+
+Cada participante recebe uma reação por rodada, renovada no início do próprio turno,
+junto com ação, ação bônus e movimento. A reação aparece como um terceiro ponto no
+painel de economia de ações e como um ponto na carta de iniciativa de cada combatente.
+
+Sair do alcance corpo a corpo de um inimigo durante o próprio movimento provoca um
+ataque de oportunidade. O raio de ameaça é de 200 cm, com uma faixa de histerese de
+15 cm: o movimento precisa começar claramente dentro do alcance e terminar claramente
+fora dele, de modo que apenas roçar a borda não gasta a reação de ninguém. Entrar no
+alcance nunca provoca, e aliados nunca provocam uns aos outros.
+
+O ataque de oportunidade usa a mesma `UAHDiceRules::RollAttack` do ataque normal,
+com o mesmo bônus de ataque, dado de dano, bônus de Fúria e desvantagem contra um
+alvo em Esquiva. O painel do d20 mostra a rolagem que resolveu a reação; a interface
+não rola de novo. A resolução é imediata, sem marcador de animação: o golpe cosmético
+não marca o reator como ocupado, porque uma reação não consome o turno de quem reage.
+O movimento de quem provocou não é interrompido, a menos que o dano o derrube.
+
+| Comando | Efeito |
+| --- | --- |
+| X / Desengajar | Uma ação; o movimento deste turno não provoca ataques de oportunidade |
+
+Desengajar ocupa na barra de ações o lugar do antigo botão Analisar, que era redundante:
+passar o cursor sobre um inimigo já mostra pontos de vida, classe de armadura e chance de
+acerto. A tecla C continua analisando o alvo, sem botão.
+
+Desengajar dura até o fim do turno que o comprou e é limpo em `StartTurn`. A linha de
+visão é conferida antes de gastar a reação: um alvo obstruído não provoca nada e a
+reação permanece disponível.
+
+O inimigo recua uma vez por encontro quando cai abaixo de 35% dos pontos de vida e
+ainda tem mais de 300 cm de movimento. Ele não desengaja, então aceita o ataque de
+oportunidade do jogador. É assim que a reação do herói fica visível em um duelo de
+um contra um; com vários inimigos o caso comum passa a ser o inverso.
+
+O registro de combate marca as reações em roxo. Um texto flutuante `REAÇÃO!` aparece
+sobre quem reagiu, e o alvo recebe `OPORTUNIDADE -N` ou `OPORTUNIDADE ERROU`.
+
+### A reação precisa ser um trinco, não uma comparação por quadro
+
+A primeira implementação comparava, no mesmo quadro, a distância antes e depois do passo:
+provocava apenas se o movimento começasse dentro de 185 cm e terminasse além de 200 cm.
+Isso nunca acontece. Um personagem a 330 cm/s a 60 quadros por segundo avança cerca de
+5,5 cm por quadro, portanto atravessa a faixa de histerese ao longo de vários quadros e
+nenhum quadro isolado satisfaz as duas condições. O resultado era um sistema que compilava,
+passava nos testes sintéticos e nunca disparava no jogo.
+
+`UpdateThreatState` agora mantém em `InReachOf` a lista de inimigos em cujo alcance o
+personagem está parado. Entra-se na lista abaixo de 185 cm e sai-se dela acima de 200 cm;
+a saída provoca quando ocorre no próprio turno, sem Desengajar, e com o ameaçador ainda de
+pé. A regressão cobre explicitamente permanecer dentro do alcance sem provocar e roçar a
+borda sem armar nada.
+
+## Inimigo sorteado
+
+`BecomeEnemy` sorteia classe e ancestralidade entre as mesmas quatro opções do jogador,
+aplica a ficha de nível 1 por `ApplySheet` — agora compartilhada com `ChooseClass` — e
+soma 6 pontos de vida para que o duelo dure algumas rodadas. O nome exibido acompanha o
+arquétipo: Espadachim, Saqueador, Oráculo ou Feiticeiro.
+
+O inimigo usa a habilidade da própria classe: o bárbaro entra em fúria com o herói a até
+6 m, o mago conjura mísseis enquanto tiver espaços, e guerreiro e clérigo se curam abaixo
+de metade dos pontos de vida. A seleção de alvo dos mísseis foi corrigida — antes
+procurava alvos com `bEnemy`, o que fazia um conjurador inimigo mirar em si mesmo.
+
+A prioridade do turno inimigo é recuar, depois habilidade, depois atacar ou aproximar-se.
+Recuar vem primeiro de propósito: o GameMode encerra o turno 1,2 s após a ação ser gasta,
+e uma habilidade antes do recuo cortaria a fuga antes de ela sair do alcance do herói.
+O limiar de recuo passou de 35% para 50% dos pontos de vida, para que o jogador
+efetivamente veja a própria reação acontecer.
+
+### Cobertura e validação pendente
+
+A suíte `AshenHollow.Rules.Combat` foi ampliada para cobrir: reação disponível no
+início da rodada, gasto ao sair do alcance, rótulo do resultado no alvo, ausência de
+provocação ao entrar no alcance, apenas uma reação por rodada, Desengajar custando a
+ação e protegendo o turno inteiro, expiração de Desengajar no turno seguinte, e
+aliados não provocando entre si.
+
+**Esta etapa ainda não foi compilada nem executada neste computador.** O build
+(`Scripts/Build-Editor.ps1`), `Scripts/Test-Rules.ps1` e `Scripts/Test-Navigation.ps1`
+precisam ser rodados antes de considerar a etapa concluída, e o relatório JSON
+correspondente deve ser registrado aqui como nas etapas anteriores.

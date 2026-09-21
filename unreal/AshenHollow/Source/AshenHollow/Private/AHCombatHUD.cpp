@@ -152,6 +152,8 @@ void AAHCombatHUD::Icon(FName Type,float X,float Y,FLinearColor Color)
     else if(Type==TEXT("Missiles")) { for(int I=-1;I<=1;++I){const float D=I*12.f;L(-18,D+8,9,D-5);L(9,D-5,2,D-6);L(9,D-5,5,D+2);} }
     else if(Type==TEXT("SecondWind")) { L(0,18,-17,0);L(-17,0,-13,-12);L(-13,-12,-5,-14);L(-5,-14,0,-8);L(0,-8,5,-14);L(5,-14,13,-12);L(13,-12,17,0);L(17,0,0,18);L(-10,1,-4,1);L(-4,1,0,-5);L(0,-5,4,6);L(4,6,7,1);L(7,1,12,1); }
     else if(Type==TEXT("Dash"))  { L(-17,-14,-3,0);L(-3,0,-17,14);L(0,-14,14,0);L(14,0,0,14); }
+    // Disengage: breaking away from a threat line
+    else if(Type==TEXT("Disengage")) { L(-15,-16,-15,16);L(-9,-10,1,0);L(1,0,-9,10);L(3,-10,13,0);L(13,0,3,10); }
     // Shield (dodge status)
     else if(Type==TEXT("Shield")){ L(-10,-14,10,-14);L(10,-14,10,4);L(10,4,0,14);L(0,14,-10,4);L(-10,4,-10,-14); }
     // Flame (rage)
@@ -161,7 +163,7 @@ void AAHCombatHUD::Icon(FName Type,float X,float Y,FLinearColor Color)
     else { L(0,-20,17,0);L(17,0,0,20);L(0,20,-17,0);L(-17,0,0,-20);L(-17,0,17,0);L(0,-20,-6,0);L(-6,0,0,20); }
 }
 
-void AAHCombatHUD::Button(FName Name,const FString& Key,const FString& Title,float X,float Y,bool Enabled)
+void AAHCombatHUD::Button(FName Name,const FString& Key,const FString& Title,float X,float Y,bool Enabled,float TitleSize)
 {
     const bool Hover=HoveredBox==Name;
     Panel(X,Y,82,78,Hover&&Enabled);
@@ -173,7 +175,7 @@ void AAHCombatHUD::Button(FName Name,const FString& Key,const FString& Title,flo
     Icon(Symbol,X+41,Y+32,Enabled?AHUI::Bright:AHUI::Dim);
     DrawRect(FLinearColor(.0f,.0f,.0f,.55f),OffsetX+X*Scale,OffsetY+Y*Scale,20*Scale,16*Scale);
     Label(Key,X+3,Y+4,.7f,Enabled?AHUI::Gold:AHUI::Dim);
-    Label(Title,X+41,Y+60,.78f,Enabled?AHUI::Text:AHUI::Dim,true);
+    Label(Title,X+41,Y+60,TitleSize,Enabled?AHUI::Text:AHUI::Dim,true);
     AddHitBox(FVector2D(OffsetX+X*Scale,OffsetY+Y*Scale),FVector2D(82*Scale,78*Scale),Name,true,1);
 }
 
@@ -500,6 +502,25 @@ void AAHCombatHUD::DrawHUD()
 
     const float Now=GetWorld()->GetTimeSeconds();
     const bool  Ready=Hero->CanAct();
+    if(PC->IsReactionPending())
+    {
+        DrawRect(FLinearColor(0,0,0,.7f),OffsetX,OffsetY,1600*Scale,900*Scale);
+        Panel(470,290,660,250,true);
+        Label(TEXT("ATAQUE DE OPORTUNIDADE"),800,320,1.4f,AHUI::Gold,true);
+        Label(TEXT("O inimigo saiu do alcance. Gastar sua reacao?"),800,365,.9f,AHUI::Text,true);
+        Button(TEXT("ReactYes"),TEXT("Y"),TEXT("ATACAR"),690,410,true);
+        Button(TEXT("ReactNo"),TEXT("N"),TEXT("PASSAR"),825,410,true);
+        return;
+    }
+    if(Hero->bCharacterReady)
+    {
+        Label(FString::Printf(TEXT("NIVEL %d | XP %d / 2700"),Hero->Level,Hero->Experience),35,195,.85f,AHUI::Gold);
+        if(Hero->MaxSpellSlots(1)>0)
+            Label(FString::Printf(TEXT("Espacos I: %d/%d II: %d/%d | circulo: %d"),Hero->ClassCharges,Hero->MaxSpellSlots(1),Hero->SpellSlots2,Hero->MaxSpellSlots(2),Hero->SelectedSpellLevel),35,220,.75f,AHUI::Text);
+        if(Hero->Level>=2) Button(TEXT("Feature"),TEXT(""),Hero->ProgressionAbilityName(),35,250,Ready,.65f);
+        if(Hero->MaxSpellSlots(2)>0) Button(TEXT("Slot"),TEXT(""),TEXT("CIRCULO"),125,250,Ready,.65f);
+        if(Hero->GuardTurns>0) Label(FString::Printf(TEXT("Escudo +2 CA: %d turnos"),Hero->GuardTurns),35,340,.75f,AHUI::Gold);
+    }
 
     // ── Detect events ────────────────────────────────────────────────────────
     // Turn banner
@@ -527,10 +548,31 @@ void AAHCombatHUD::DrawHUD()
     // ═══════════════════════════════════════════════════════════════════════
     if(!Hero->bCharacterReady)
     {
+        if(!Hero->bAncestrySelected)
+        {
+            Panel(200,140,1200,600,true);
+            Label(TEXT("A S H E N   H O L L O W"),800,160,1.8f,AHUI::Bright,true,true);
+            Label(TEXT("1 / 2  ·  ESCOLHA SUA ANCESTRALIDADE"),800,210,1.f,AHUI::Gold,true);
+            Label(TEXT("Tracos iniciais do prototipo · modelos compartilhados"),800,245,.82f,AHUI::Dim,true);
+            for(int32 I=0;I<4;++I)
+            {
+                const float X=225+I*288; const auto Race=static_cast<EAHAncestry>(I);
+                const FName Name(*FString::Printf(TEXT("Race%d"),I));
+                Panel(X,300,268,270,HoveredBox==Name);
+                Label(AAHCharacter::AncestryName(Race),X+134,345,1.15f,AHUI::Bright,true,true);
+                const TCHAR* Passive[]={TEXT("+1 iniciativa"),TEXT("+1 classe de armadura"),TEXT("+1 ponto de vida"),TEXT("Sorte: rerrola 1 uma vez")};
+                Label(Passive[I],X+134,408,.80f,AHUI::Text,true);
+                Label(I<2?TEXT("Movimento: 9 m"):TEXT("Movimento: 7,5 m"),X+134,442,.82f,AHUI::Dim,true);
+                Label(TEXT("ESCOLHER"),X+134,514,1.f,AHUI::Gold,true);
+                AddHitBox(FVector2D(OffsetX+X*Scale,OffsetY+300*Scale),FVector2D(268*Scale,270*Scale),Name,true,2);
+            }
+            Label(TEXT("Depois, escolha uma das quatro classes."),800,650,.85f,AHUI::Dim,true);
+            return;
+        }
         Panel(200,140,1200,600,true);
         Label(TEXT("A S H E N   H O L L O W"),800,160,1.8f,AHUI::Bright,true,true);
-        Label(TEXT("ESCOLHA SUA CLASSE"),800,198,1.f,AHUI::Gold,true);
-        Label(TEXT("Nível 1  ·  quatro arquétipos  ·  atributos predefinidos"),800,230,.88f,AHUI::Dim,true);
+        Label(TEXT("2 / 2  ·  ESCOLHA SUA CLASSE"),800,198,1.f,AHUI::Gold,true);
+        Label(AAHCharacter::AncestryName(Hero->Ancestry)+TEXT("  ·  ")+AAHCharacter::AncestryTrait(Hero->Ancestry),800,230,.80f,AHUI::Dim,true);
         const TCHAR* Stats[]  ={TEXT("12 PV · CA 16 · +5 ataque"),TEXT("14 PV · CA 14 · +5 ataque"),TEXT("10 PV · CA 18 · +4 ataque"),TEXT("8 PV · CA 12 · +2 ataque")};
         const TCHAR* Skills[] ={TEXT("SEGUNDO FÔLEGO"),TEXT("FÚRIA"),TEXT("CURAR FERIMENTOS"),TEXT("MÍSSEIS MÁGICOS")};
         const TCHAR* Details[]={TEXT("Bônus: cura 1d10+1"),TEXT("Bônus: +2 dano físico"),TEXT("Ação: cura 1d8+3"),TEXT("Ação: 3 dardos de força")};
@@ -545,7 +587,8 @@ void AAHCombatHUD::DrawHUD()
             DrawRect(CC,OffsetX+(X+1)*Scale,OffsetY+268*Scale,266*Scale,4*Scale);
             Icon(AHUI::AbilityIcon(static_cast<EAHHeroClass>(I)),X+134,330,AHUI::Bright);
             Label(AAHCharacter::ClassName(static_cast<EAHHeroClass>(I)),X+134,382,1.25f,AHUI::Bright,true,true);
-            Label(Stats[I],X+134,410,.82f,AHUI::Text,true);
+            const int32 HP[]={12,14,10,8}, AC[]={16,14,18,12};
+            Label(FString::Printf(TEXT("%d PV · CA %d"),HP[I]+(Hero->Ancestry==EAHAncestry::Dwarf?1:0),AC[I]+(Hero->Ancestry==EAHAncestry::Elf?1:0)),X+134,410,.82f,AHUI::Text,true);
             DrawLine(OffsetX+(X+20)*Scale,OffsetY+428*Scale,OffsetX+(X+248)*Scale,OffsetY+428*Scale,AHUI::Copper,.8f*Scale);
             Label(Skills[I],X+134,438,.88f,CC,true);
             Label(Details[I],X+134,464,.78f,AHUI::Text,true);
@@ -555,7 +598,8 @@ void AAHCombatHUD::DrawHUD()
             Label(TEXT("JOGAR"),X+134,558,1.f,AHUI::Bright,true);
             AddHitBox(FVector2D(OffsetX+X*Scale,OffsetY+268*Scale),FVector2D(268*Scale,336*Scale),Name,true,2);
         }
-        Label(TEXT("Modelos provisórios  ·  sistema de combate por turnos"),800,678,.82f,AHUI::Dim,true);
+        Label(TEXT("VOLTAR: ANCESTRALIDADE"),800,650,.88f,AHUI::Gold,true);
+        AddHitBox(FVector2D(OffsetX+600*Scale,OffsetY+634*Scale),FVector2D(400*Scale,50*Scale),TEXT("BackAncestry"),true,2);
         return;
     }
 
@@ -595,7 +639,7 @@ void AAHCombatHUD::DrawHUD()
             const FLinearColor TC=Actor->bEnemy?AHUI::Red:AHUI::Teal;
             DrawRect(TC,OffsetX+X*Scale,OffsetY+32*Scale,3*Scale,CardH*Scale);
             Icon(Actor->bEnemy?TEXT("Attack"):TEXT("Dodge"),X+20,62,Dead?AHUI::Dim:TC);
-            Label(Actor->bEnemy?TEXT("THORNBOUND"):AAHCharacter::ClassName(Actor->HeroClass),X+36,40,.82f,Dead?AHUI::Dim:AHUI::Text);
+            Label(Actor->bEnemy?Actor->EnemyName:AAHCharacter::ClassName(Actor->HeroClass),X+36,40,.82f,Dead?AHUI::Dim:AHUI::Text);
             if(Active && Actor->TurnStartTime > 0.f)
             {
                 const float Elapsed=Now-Actor->TurnStartTime;
@@ -604,6 +648,11 @@ void AAHCombatHUD::DrawHUD()
             }
             else
                 Label(FString::Printf(TEXT("INI %d"),Actor->Initiative),X+36,57,.70f,Active?AHUI::Gold:AHUI::Dim);
+            // Reaction dot — teal while this participant can still react
+            if(!Dead)
+                DrawFilledCircle(X+CardW-14,45,5.f,
+                    Actor->Turn.bReaction?AHUI::Teal:FLinearColor(.04f,.04f,.04f,1.f),
+                    Actor->Turn.bReaction?AHUI::Teal:AHUI::Dim,1.f);
             // Mini HP bar
             const float BPX=OffsetX+(X+5)*Scale,BPY=OffsetY+88*Scale,BPW=(CardW-10)*Scale,BPH=5*Scale;
             DrawRect(FLinearColor(.06f,.008f,.008f,1.f),BPX,BPY,BPW,BPH);
@@ -666,16 +715,20 @@ void AAHCombatHUD::DrawHUD()
     DrawLine(OffsetX+378*Scale,OffsetY+760*Scale,OffsetX+572*Scale,OffsetY+760*Scale,AHUI::Copper,.7f*Scale);
     // Action pip
     const FLinearColor ActF=Hero->Turn.bAction?AHUI::Green:FLinearColor(.05f,.05f,.05f,1.f);
-    DrawFilledCircle(430,774,12,ActF,Hero->Turn.bAction?AHUI::Green:AHUI::Dim,1.5f);
-    Label(TEXT("AÇÃO"),430,792,.70f,Hero->Turn.bAction?AHUI::Green:AHUI::Dim,true);
+    DrawFilledCircle(429,774,12,ActF,Hero->Turn.bAction?AHUI::Green:AHUI::Dim,1.5f);
+    Label(TEXT("AÇÃO"),429,792,.64f,Hero->Turn.bAction?AHUI::Green:AHUI::Dim,true);
     // Bonus pip
     const FLinearColor BonF=Hero->Turn.bBonus?AHUI::Amber:FLinearColor(.05f,.05f,.05f,1.f);
-    DrawFilledCircle(476,774,10,BonF,Hero->Turn.bBonus?AHUI::Amber:AHUI::Dim,1.5f);
-    Label(TEXT("BÔNUS"),476,792,.70f,Hero->Turn.bBonus?AHUI::Amber:AHUI::Dim,true);
+    DrawFilledCircle(475,774,10,BonF,Hero->Turn.bBonus?AHUI::Amber:AHUI::Dim,1.5f);
+    Label(TEXT("BÔNUS"),475,792,.64f,Hero->Turn.bBonus?AHUI::Amber:AHUI::Dim,true);
+    // Reaction pip — spent by opportunity attacks, renewed on your own turn
+    const FLinearColor ReaF=Hero->Turn.bReaction?AHUI::Teal:FLinearColor(.05f,.05f,.05f,1.f);
+    DrawFilledCircle(521,774,10,ReaF,Hero->Turn.bReaction?AHUI::Teal:AHUI::Dim,1.5f);
+    Label(TEXT("REAÇÃO"),521,792,.64f,Hero->Turn.bReaction?AHUI::Teal:AHUI::Dim,true);
     DrawLine(OffsetX+378*Scale,OffsetY+806*Scale,OffsetX+572*Scale,OffsetY+806*Scale,AHUI::Copper,.7f*Scale);
     // Movement dots
     Label(TEXT("MOVIMENTO"),475,814,.70f,AHUI::Dim,true);
-    const float MovFrac=FMath::Clamp(Hero->Turn.Movement/900.f,0.f,1.f);
+    const float MovFrac=FMath::Clamp(Hero->Turn.Movement/Hero->BaseMovement,0.f,1.f);
     for(int32 D=0;D<9;++D)
     {
         const bool bFill=(float)D/9.f<MovFrac;
@@ -684,11 +737,11 @@ void AAHCombatHUD::DrawHUD()
     Label(FString::Printf(TEXT("%.0f m"),Hero->Turn.Movement/100.f),475,844,.70f,AHUI::Dim,true);
 
     // ── Action buttons ───────────────────────────────────────────────────────
-    Button(TEXT("Attack"),TEXT("Q"),  TEXT("ATAQUE"),   588,745,Ready&&Hero->Turn.bAction);
-    Button(TEXT("Dodge"), TEXT("Spc"),TEXT("ESQUIVA"),  678,745,Ready&&Hero->Turn.bAction);
-    Button(TEXT("Heal"),  TEXT("E"),  Hero->ClassAbilityName(),768,745,Hero->CanUseClassAbility());
-    Button(TEXT("Arcana"),TEXT("C"),  TEXT("ARCANA"),   858,745,Ready&&Hero->Turn.bAction);
-    Button(TEXT("Dash"),  TEXT("R"),  TEXT("DISPARADA"),948,745,Ready&&Hero->Turn.bAction);
+    Button(TEXT("Attack"),   TEXT("Q"),  TEXT("ATAQUE"),     588,745,Ready&&Hero->Turn.bAction);
+    Button(TEXT("Dodge"),    TEXT("Spc"),TEXT("ESQUIVA"),    678,745,Ready&&Hero->Turn.bAction);
+    Button(TEXT("Disengage"),TEXT("X"),  TEXT("DESENGAJAR"), 768,745,Ready&&Hero->Turn.bAction&&!Hero->bDisengaging,.62f);
+    Button(TEXT("Heal"),     TEXT("E"),  Hero->ClassAbilityName(),858,745,Hero->CanUseClassAbility());
+    Button(TEXT("Dash"),     TEXT("R"),  TEXT("DISPARADA"),  948,745,Ready&&Hero->Turn.bAction);
 
     // ── End Turn ─────────────────────────────────────────────────────────────
     const bool ETHover=HoveredBox==TEXT("EndTurn");
@@ -708,11 +761,14 @@ void AAHCombatHUD::DrawHUD()
     if(HoveredBox==TEXT("Attack"))  Tooltip=FString::Printf(TEXT("Ataque · 1 ação · +%d p/ acertar · 1d%d+%d de dano"),Hero->AttackBonus,Hero->DamageSides,Hero->DamageModifier+(Hero->bRaging?2:0));
     if(HoveredBox==TEXT("Dodge"))   Tooltip=TEXT("Esquiva · 1 ação · desvantagem nos ataques recebidos até seu próximo turno");
     if(HoveredBox==TEXT("Heal"))    Tooltip=Hero->ClassAbilityDescription();
-    if(HoveredBox==TEXT("Dash"))    Tooltip=TEXT("Disparada · 1 ação · +9 m de movimento neste turno");
-    if(HoveredBox==TEXT("Arcana"))  Tooltip=TEXT("Teste de Arcana · 1 ação · d20+1 contra dificuldade 12");
+    if(HoveredBox==TEXT("Dash"))    Tooltip=FString::Printf(TEXT("Disparada · 1 acao · +%.1f m neste turno"),Hero->BaseMovement/100.f);
+    if(HoveredBox==TEXT("Disengage")) Tooltip=Hero->bDisengaging
+        ? TEXT("Você já desengajou: seu movimento não provoca reações até o fim deste turno")
+        : TEXT("Desengajar · 1 ação · seu movimento não provoca ataques de oportunidade neste turno");
+
     if(HoveredBox==TEXT("EndTurn")) Tooltip=TEXT("Encerra seu turno. Ação, bônus e movimento renovam no próximo.");
     Label(Tooltip,800,720,.86f,AHUI::Text,true);
-    Label(TEXT("Botão direito: mover / alvo     F5: reiniciar"),800,882,.72f,AHUI::Dim,true);
+    Label(TEXT("Botão direito: mover / alvo     Sair do alcance inimigo provoca um ataque de oportunidade     C: analisar     F5: reiniciar"),800,882,.68f,AHUI::Dim,true);
 
     // ═══════════════════════════════════════════════════════════════════════
     // COMBAT LOG
@@ -725,9 +781,9 @@ void AAHCombatHUD::DrawHUD()
         const FString& Entry=Hero->CombatLog[I];
         FLinearColor LC=AHUI::Dim;
         if(I==Hero->CombatLog.Num()-1) LC=AHUI::Text;
-        if(Entry.Contains(TEXT("CRITICO"))||Entry.Contains(TEXT("HIT"))) LC=AHUI::Amber;
-        if(Entry.Contains(TEXT("cura"))||Entry.Contains(TEXT("HEAL"))) LC=AHUI::Green;
-        if(Entry.Contains(TEXT("MISS"))||Entry.Contains(TEXT("FALHA"))) LC=AHUI::Dim;
+        if(Entry.Contains(TEXT("CRITICO"))||Entry.Contains(TEXT("CRÍTICO"))||Entry.Contains(TEXT("ACERTO"))) LC=AHUI::Amber;
+        if(Entry.Contains(TEXT("cura"))||Entry.Contains(TEXT("Oportunidade"))) LC=Entry.Contains(TEXT("cura"))?AHUI::Green:AHUI::Purple;
+        if(Entry.Contains(TEXT("ERRO"))||Entry.Contains(TEXT("falha"))) LC=AHUI::Dim;
         Label(Entry,1264,768+I*18,.67f,LC);
     }
 
@@ -761,7 +817,7 @@ void AAHCombatHUD::DrawHUD()
 
         // Floating numbers / labels — always continue for downed/stabilized chars
         if(!Actor->bDowned && !Actor->bStabilized)
-            if(!It->bEnemy&&Now-It->ImpactTextTime>1.6f&&!It->bIsAttacking) continue;
+            if(!It->bEnemy&&Now-It->ImpactTextTime>1.6f&&Now-It->OpportunityFlashTime>1.4f&&!It->bIsAttacking) continue;
         FVector2D Pos; if(!PC->ProjectWorldLocationToScreen(Actor->GetActorLocation()+FVector(0,0,170),Pos)) continue;
         const float SX=(Pos.X-OffsetX)/Scale, SY=(Pos.Y-OffsetY)/Scale;
         if(SY<120||SY>680||SX<30||SX>1220) continue;
@@ -769,7 +825,7 @@ void AAHCombatHUD::DrawHUD()
         if(Actor->bEnemy&&Actor->IsAlive())
         {
             DrawRect(FLinearColor(0,0,0,.55f),Pos.X-66*Scale,Pos.Y-4*Scale,132*Scale,16*Scale);
-            Label(TEXT("THORNBOUND"),SX,SY-2,.84f,AHUI::Text,true);
+            Label(Actor->EnemyName,SX,SY-2,.84f,AHUI::Text,true);
             // Enemy HP bar
             const float EBX=Pos.X-58*Scale, EBY=Pos.Y+16*Scale, EBW=116*Scale, EBH=5*Scale;
             DrawRect(FLinearColor(.06f,.008f,.008f,1.f),EBX,EBY,EBW,EBH);
@@ -783,6 +839,14 @@ void AAHCombatHUD::DrawHUD()
             DrawStatusIcons(SX, SY-46, Actor);
         else
             DrawDeathSaves(SX, SY-30, Actor);
+
+        // Reaction call-out
+        const float OppAge=Now-Actor->OpportunityFlashTime;
+        if(OppAge>=0.f&&OppAge<1.4f)
+        {
+            FLinearColor OC=AHUI::Bright; OC.A=1.f-FMath::Clamp((OppAge-.7f)/.7f,0.f,1.f);
+            Label(TEXT("REAÇÃO!"),SX,SY-66,1.f,OC,true,true);
+        }
 
         // Floating damage / healing
         const float ImpAge=Now-Actor->ImpactTextTime;
@@ -809,7 +873,7 @@ void AAHCombatHUD::DrawHUD()
         const int Chance=FMath::RoundToInt(100*(PC->HoveredEnemy->bDodging?Base*Base:Base));
         Panel(640,130,320,68);
         DrawRect(FLinearColor(AHUI::Red.R,AHUI::Red.G,AHUI::Red.B,.12f),OffsetX+641*Scale,OffsetY+131*Scale,318*Scale,66*Scale);
-        Label(TEXT("THORNBOUND"),800,140,1.f,AHUI::Bright,true,true);
+        Label(PC->HoveredEnemy->EnemyName,800,140,1.f,AHUI::Bright,true,true);
         const float TBX=OffsetX+648*Scale,TBY=OffsetY+160*Scale,TBW=292*Scale,TBH=8*Scale;
         DrawRect(FLinearColor(.06f,.008f,.008f,1.f),TBX,TBY,TBW,TBH);
         const float TF=PC->HoveredEnemy->MaxHealth>0?(float)PC->HoveredEnemy->Health/PC->HoveredEnemy->MaxHealth:0.f;
@@ -829,9 +893,36 @@ void AAHCombatHUD::DrawHUD()
         Panel(1262,188,302,298);
         Label(Hero->LastRollLabel,1413,204,.78f,AHUI::Gold,true,true);
         DrawLine(OffsetX+1272*Scale,OffsetY+220*Scale,OffsetX+1554*Scale,OffsetY+220*Scale,AHUI::Copper,.7f*Scale);
+        // Advantage, disadvantage and the halfling's luck all resolve inside the
+        // d20 roll. Without showing the discarded die the player sees one number
+        // and cannot tell any of them ever happened.
+        if(Roll.Advantage!=0||Roll.bLuckyReroll)
+        {
+            FString Tag=Roll.Advantage>0?TEXT("VANTAGEM"):Roll.Advantage<0?TEXT("DESVANTAGEM"):FString();
+            if(Roll.bLuckyReroll) Tag=Tag.IsEmpty()?FString(TEXT("SORTE")):Tag+TEXT("  ·  SORTE");
+            Label(Tag,1413,226,.80f,
+                Roll.Advantage>0?AHUI::Green:Roll.Advantage<0?AHUI::Red:AHUI::Bright,true,true);
+        }
         const float T=FMath::Clamp(RollAge/.7f,0.f,1.f);
         DrawDie(1413,318,78,30+300*(1-FMath::Pow(1-T,3)),AHUI::Bright);
         Label(FString::FromInt(Roll.NaturalRoll),1413,297,3.f,AHUI::White,true,true);
+        if(Roll.DiscardedRoll>0)
+        {
+            // The die that was thrown away, struck through.
+            DrawFilledCircle(1519,258,21,FLinearColor(.05f,.04f,.03f,1.f),AHUI::Dim,1.2f);
+            Label(FString::FromInt(Roll.DiscardedRoll),1519,249,1.05f,AHUI::Dim,true,true);
+            DrawLine(OffsetX+1503*Scale,OffsetY+274*Scale,
+                     OffsetX+1535*Scale,OffsetY+242*Scale,AHUI::Red,1.8f*Scale);
+            Label(TEXT("descartado"),1519,282,.55f,AHUI::Dim,true);
+        }
+        else if(Roll.bLuckyReroll)
+        {
+            DrawFilledCircle(1519,258,21,FLinearColor(.05f,.04f,.03f,1.f),AHUI::Dim,1.2f);
+            Label(TEXT("1"),1519,249,1.05f,AHUI::Dim,true,true);
+            DrawLine(OffsetX+1503*Scale,OffsetY+274*Scale,
+                     OffsetX+1535*Scale,OffsetY+242*Scale,AHUI::Red,1.8f*Scale);
+            Label(TEXT("rerrolado"),1519,282,.55f,AHUI::Dim,true);
+        }
         DrawLine(OffsetX+1272*Scale,OffsetY+403*Scale,OffsetX+1554*Scale,OffsetY+403*Scale,AHUI::Copper,.7f*Scale);
         Label(FString::Printf(TEXT("%d + %d = %d"),Roll.NaturalRoll,Roll.Modifier,Roll.Total),1413,411,1.3f,AHUI::Text,true);
         const FLinearColor RC=Roll.bSuccess?AHUI::Green:AHUI::Red;
@@ -858,10 +949,23 @@ void AAHCombatHUD::DrawHUD()
         for(const auto& C:Mode->Order) if(C.Get()&&C->bEnemy&&C->IsAlive()) bEnemyAlive=true;
         const bool Win=!bEnemyAlive;
         DrawRect(FLinearColor(0,0,0,.65f),OffsetX,OffsetY,1600*Scale,900*Scale);
-        Panel(530,210,540,110,true);
+        Panel(530,210,540,340,true);
         DrawRect((Win?AHUI::Teal:AHUI::Red)*.4f,OffsetX+531*Scale,OffsetY+211*Scale,538*Scale,108*Scale);
-        Label(Win?TEXT("V I T Ó R I A"):TEXT("D E R R O T A"),800,228,2.f,AHUI::Bright,true,true);
-        Label(Win?TEXT("O inimigo foi derrotado."):TEXT("Você foi derrotado."),800,270,.95f,AHUI::Text,true);
-        Label(TEXT("F5  ·  reiniciar encontro"),800,296,.88f,AHUI::Dim,true);
+        Label(Win?TEXT("V I T Ó R I A"):Hero->bStabilized?TEXT("ESTABILIZADO"):TEXT("D E R R O T A"),800,228,2.f,AHUI::Bright,true,true);
+        Label(Win?TEXT("O inimigo foi derrotado."):Hero->bStabilized?TEXT("Voce sobreviveu. Encontro encerrado."):TEXT("Você foi derrotado."),800,270,.95f,AHUI::Text,true);
+        Label(FString::Printf(TEXT("Nivel %d | XP %d / 2700 | vitoria +300 XP"),Hero->Level,Hero->Experience),800,300,.85f,AHUI::Gold,true);
+        if(Hero->Level==4 && Hero->Feat==0)
+        {
+            Label(TEXT("Escolha um talento permanente"),800,340,.9f,AHUI::Text,true);
+            Button(TEXT("Feat1"),TEXT("+8 PV"),TEXT("ROBUSTO"),645,380,true,.65f);
+            Button(TEXT("Feat2"),TEXT("+5 INIT"),TEXT("ALERTA"),755,380,true,.65f);
+            Button(TEXT("Feat3"),TEXT("+3 m"),TEXT("MOVEL"),865,380,true,.65f);
+        }
+        else if(Hero->IsAlive() || Hero->bStabilized)
+        {
+            Label(TEXT("Descansar e iniciar o proximo combate"),800,350,.9f,AHUI::Text,true);
+            Button(TEXT("Next"),TEXT(""),TEXT("SEGUIR"),759,385,true);
+        }
+        Label(TEXT("F5: nova jornada (reinicia XP)"),800,510,.8f,AHUI::Dim,true);
     }
 }

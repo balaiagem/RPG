@@ -23,15 +23,26 @@ public:
     void CombatCommand(FName Command);
     void EndTurn();
     void Dash();
+    bool RequestMoveToLocation(const FVector& Location);
+    bool OfferReaction(class AAHCharacter* Mover);
+    void ResolveReaction(bool bAccept);
+    bool IsReactionPending() const { return ReactionTarget.IsValid(); }
     UPROPERTY() TObjectPtr<class AAHCharacter> HoveredEnemy;
 private:
+    TWeakObjectPtr<class AAHCharacter> ReactionTarget;
+    void AcceptReaction() { ResolveReaction(true); }
+    void DeclineReaction() { ResolveReaction(false); }
     void AttackNearest();
     void Heal();
+    void DisengageAction();
     void Check();
     void Restart();
     UPROPERTY() TObjectPtr<class AAHCharacter> AttackTarget;
     void MoveToCursor();
     void Stop();
+    bool bQueuedMove=false;
+    FVector QueuedMove=FVector::ZeroVector;
+    double QueuedMoveExpires=0;
     UPROPERTY() TObjectPtr<UInputMappingContext> Mapping;
     UPROPERTY() TObjectPtr<UInputAction> MoveAction;
     UPROPERTY() TObjectPtr<UInputAction> StopAction;

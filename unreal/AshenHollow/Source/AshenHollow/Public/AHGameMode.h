@@ -18,5 +18,6 @@ public:
     bool bFinished = false;
     float TurnStarted = 0.f;
     AAHCharacter* ActiveCharacter() const;
+    bool NextEncounter();
     bool EndTurn(AAHCharacter* Requester);
 };

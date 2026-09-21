@@ -40,8 +40,53 @@ bool FAHDiceTest::RunTest(const FString& Parameters)
     TestTrue(TEXT("Sample exercised natural 20"), bSawCritical);
     TestTrue(TEXT("Sample exercised natural 1"), bSawOne);
     FRandomStream Adv(55), Disadv(55);
+    int32 LuckyCases=0;
+    for(int32 Seed=0;Seed<128;++Seed) for(int32 Advantage=-1;Advantage<=1;++Advantage)
+    {
+        FRandomStream Expected(Seed),Actual(Seed);
+        auto Die=[&]() { int32 Value=Expected.RandRange(1,20); if(Value==1) { ++LuckyCases; Value=Expected.RandRange(1,20); } return Value; };
+        const int32 First=Die(); const int32 Second=Advantage==0?First:Die();
+        const int32 Wanted=Advantage==0?First:Advantage>0?FMath::Max(First,Second):FMath::Min(First,Second);
+        TestEqual(TEXT("Lucky rerolls each natural one once before advantage selection"),UAHDiceRules::RollD20(Actual,Advantage,true),Wanted);
+        TestEqual(TEXT("Lucky consumes no hidden extra rolls"),Actual.RandRange(1,20),Expected.RandRange(1,20));
+    }
+    TestTrue(TEXT("Lucky test exercised natural ones"),LuckyCases>0);
     TestTrue(TEXT("Advantage chooses greater roll from the same pair"),
         UAHDiceRules::RollD20(Adv, 1) >= UAHDiceRules::RollD20(Disadv, -1));
+
+    // The interface can only show advantage or luck if the outcome carries the
+    // evidence. A roll that reports nothing is indistinguishable from a plain one.
+    {
+        FRandomStream Plain(21);
+        const FAHDiceOutcome Straight = UAHDiceRules::RollCheck(Plain, 0, 10);
+        TestEqual(TEXT("A straight roll discards no die"), Straight.DiscardedRoll, 0);
+        TestEqual(TEXT("A straight roll reports no advantage"), Straight.Advantage, 0);
+        TestFalse(TEXT("A straight roll reports no luck"), Straight.bLuckyReroll);
+    }
+    for (int32 Seed = 0; Seed < 64; ++Seed)
+    {
+        FRandomStream Up(Seed), Down(Seed);
+        const FAHDiceOutcome High = UAHDiceRules::RollCheck(Up, 0, 10, 1);
+        const FAHDiceOutcome Low  = UAHDiceRules::RollCheck(Down, 0, 10, -1);
+        TestEqual(TEXT("Advantage is reported to the interface"), High.Advantage, 1);
+        TestEqual(TEXT("Disadvantage is reported to the interface"), Low.Advantage, -1);
+        TestTrue(TEXT("Advantage keeps the higher of the two dice it shows"),
+            High.DiscardedRoll > 0 && High.NaturalRoll >= High.DiscardedRoll);
+        TestTrue(TEXT("Disadvantage keeps the lower of the two dice it shows"),
+            Low.DiscardedRoll > 0 && Low.NaturalRoll <= Low.DiscardedRoll);
+    }
+    bool bReportedLuck = false;
+    for (int32 Seed = 0; Seed < 400 && !bReportedLuck; ++Seed)
+    {
+        FRandomStream Lucky(Seed);
+        const FAHDiceOutcome Result = UAHDiceRules::RollCheck(Lucky, 0, 10, 0, true);
+        if (Result.bLuckyReroll)
+        {
+            bReportedLuck = true;
+            TestNotEqual(TEXT("Luck never leaves a natural 1 standing"), Result.NaturalRoll, 1);
+        }
+    }
+    TestTrue(TEXT("Luck reports itself to the interface"), bReportedLuck);
     return true;
 }
 #endif

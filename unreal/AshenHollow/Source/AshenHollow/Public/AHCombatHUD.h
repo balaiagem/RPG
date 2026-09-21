@@ -46,7 +46,7 @@ private:
                FLinearColor Color, bool Center = false, bool bBold = false);
     void Icon(FName Type, float X, float Y, FLinearColor Color);
     void Button(FName Name, const FString& Key, const FString& Title,
-                float X, float Y, bool Enabled);
+                float X, float Y, bool Enabled, float TitleSize = .78f);
     void DrawDie(float X, float Y, float Radius, float Angle, FLinearColor Color);
     void DrawFilledCircle(float X, float Y, float R,
                           FLinearColor Fill, FLinearColor Border, float Thickness = 1.5f);

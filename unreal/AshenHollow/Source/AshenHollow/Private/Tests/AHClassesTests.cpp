@@ -19,6 +19,23 @@ bool FAHClassesTest::RunTest(const FString& Parameters)
     auto* Fighter=Spawn(0); auto* Barb=Spawn(3000); auto* Cleric=Spawn(6000); auto* Wizard=Spawn(9000); auto* Enemy=Spawn(9600);
     if(!Fighter||!Barb||!Cleric||!Wizard||!Enemy) { AddError(TEXT("Class fixture failed")); GEngine->DestroyWorldContext(World); World->DestroyWorld(false); return false; }
     Fighter->ChooseClass(EAHHeroClass::Fighter);
+    for(int32 Race=0;Race<4;++Race) for(int32 Class=0;Class<4;++Class)
+    {
+        auto* Created=Spawn(12000+Race*4000+Class*800);
+        if(!TestNotNull(TEXT("Ancestry/class fixture"),Created)) continue;
+        Created->ChooseAncestry(static_cast<EAHAncestry>(Race));
+        Created->ChooseClass(static_cast<EAHHeroClass>(Class));
+        const int32 HP[]={12,14,10,8},AC[]={16,14,18,12},Initiative[]={1,2,0,2};
+        TestEqual(TEXT("Ancestry HP applied once"),Created->MaxHealth,HP[Class]+(Race==2?1:0));
+        TestEqual(TEXT("Elf armor trait"),Created->ArmorClass,AC[Class]+(Race==1?1:0));
+        TestEqual(TEXT("Human initiative trait"),Created->InitiativeBonus,Initiative[Class]+(Race==0?1:0));
+        Created->StartTurn();
+        TestEqual(TEXT("Ancestry turn speed"),Created->Turn.Movement,Race>=2?750.f:900.f);
+        Created->Dash(); TestEqual(TEXT("Dash uses ancestry speed"),Created->Turn.Movement,Race>=2?1500.f:1800.f);
+        Created->ChooseAncestry(static_cast<EAHAncestry>((Race+1)%4));
+        TestEqual(TEXT("Ancestry locks after character confirmation"),static_cast<int32>(Created->Ancestry),Race);
+        Created->Destroy();
+    }
     Fighter->ChooseClass(EAHHeroClass::Wizard);
     TestEqual(TEXT("Class cannot change after confirmation"),Fighter->MaxHealth,12);
     Barb->ChooseClass(EAHHeroClass::Barbarian); Barb->StartTurn(); Barb->UseClassAbility();

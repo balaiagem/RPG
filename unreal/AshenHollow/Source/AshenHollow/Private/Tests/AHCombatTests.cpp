@@ -119,6 +119,68 @@ bool FAHCombatTest::RunTest(const FString& Parameters)
         TestEqual(TEXT("Old successes cannot immediately restabilize after damage"),Downed->DeathSuccesses,0);
         TestEqual(TEXT("Damage at zero HP adds a death failure"),Downed->DeathFailures,1);
     }
+    // ── Reactions: opportunity attacks and Disengage ─────────────────────────
+    auto* Runner=World->SpawnActor<AAHCharacter>(FVector(8000,0,100),FRotator::ZeroRotator,Spawn);
+    auto* Threat=World->SpawnActor<AAHCharacter>(FVector(8100,0,100),FRotator::ZeroRotator,Spawn);
+    if(TestNotNull(TEXT("Reaction mover fixture"),Runner) && TestNotNull(TEXT("Reaction threat fixture"),Threat))
+    {
+        const FVector InReach(8000,0,100), Away(8600,0,100), Edge(8290,0,100);
+        Threat->bEnemy=true; Threat->Health=Threat->MaxHealth=60; Threat->AttackBonus=40;
+        Runner->Health=Runner->MaxHealth=60;
+        Threat->StartTurn(); Threat->FinishTurn();
+        Runner->StartTurn();
+        TestTrue(TEXT("Reaction is available at the start of a round"),Threat->Turn.bReaction);
+
+        // Standing inside the reach only arms the threat.
+        Runner->ImpactText.Reset();
+        Runner->SetActorLocation(InReach); Runner->UpdateThreatState();
+        TestTrue(TEXT("Standing inside the reach never provokes"),
+            Runner->ImpactText.IsEmpty() && Threat->Turn.bReaction);
+
+        // Walking out of it is what provokes. The departure spans several frames
+        // in the real game, so this must be a latch and not a one-frame window.
+        Runner->SetActorLocation(Away); Runner->UpdateThreatState();
+        TestFalse(TEXT("Leaving melee reach spends the hostile reaction"),Threat->Turn.bReaction);
+        TestTrue(TEXT("Opportunity attack labels its outcome on the mover"),
+            Runner->ImpactText.Contains(TEXT("OPORTUNIDADE")));
+
+        Runner->ImpactText.Reset();
+        Runner->SetActorLocation(InReach); Runner->UpdateThreatState();
+        Runner->SetActorLocation(Away);    Runner->UpdateThreatState();
+        TestTrue(TEXT("Only one reaction per round"),Runner->ImpactText.IsEmpty());
+
+        // Disengage covers every step of the turn that bought it.
+        Threat->StartTurn(); Threat->FinishTurn();
+        TestTrue(TEXT("Own turn renews the reaction"),Threat->Turn.bReaction);
+        Runner->StartTurn();
+        Runner->SetActorLocation(InReach); Runner->UpdateThreatState();
+        Runner->Disengage();
+        TestTrue(TEXT("Disengage marks the turn"),Runner->bDisengaging);
+        TestFalse(TEXT("Disengage costs the action"),Runner->Turn.bAction);
+        Runner->ImpactText.Reset();
+        Runner->SetActorLocation(Away); Runner->UpdateThreatState();
+        TestTrue(TEXT("Disengage prevents the opportunity attack"),Runner->ImpactText.IsEmpty());
+        TestTrue(TEXT("Disengage leaves the hostile reaction unspent"),Threat->Turn.bReaction);
+        Runner->StartTurn();
+        TestFalse(TEXT("Disengage expires with the turn that bought it"),Runner->bDisengaging);
+
+        // Clipping the outer edge of the reach never arms anything, so a foe
+        // walking past cannot hand out a free swing it did not earn.
+        Runner->ImpactText.Reset();
+        Runner->SetActorLocation(Edge); Runner->UpdateThreatState();
+        Runner->SetActorLocation(Away); Runner->UpdateThreatState();
+        TestTrue(TEXT("Grazing the edge of the reach arms nothing"),
+            Runner->ImpactText.IsEmpty() && Threat->Turn.bReaction);
+
+        // Allies never provoke each other.
+        Threat->bEnemy=false;
+        Runner->StartTurn();
+        Runner->ImpactText.Reset();
+        Runner->SetActorLocation(InReach); Runner->UpdateThreatState();
+        Runner->SetActorLocation(Away);    Runner->UpdateThreatState();
+        TestTrue(TEXT("Allies do not provoke each other"),
+            Runner->ImpactText.IsEmpty() && Threat->Turn.bReaction);
+    }
     GEngine->DestroyWorldContext(World); World->DestroyWorld(false); return true;
 }
 #endif

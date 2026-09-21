@@ -16,6 +16,7 @@ class UNiagaraSystem;
 class AAHMagicVisual;
 class UAHEquipmentComponent;
 enum class EAHHeroClass : uint8 { Fighter, Barbarian, Cleric, Wizard };
+enum class EAHAncestry : uint8 { Human, Elf, Dwarf, Halfling };
 
 /** Shared character for the turn-based SRD combat encounter. */
 UCLASS(Blueprintable)
@@ -34,12 +35,18 @@ public:
     UPROPERTY(BlueprintReadOnly) int32 MaxHealth = 12;
     UPROPERTY(BlueprintReadOnly) int32 ArmorClass = 16;
     UPROPERTY(BlueprintReadOnly) FAHDiceOutcome LastRoll;
+    /** Shown by the HUD for a foe; set from its rolled archetype in BecomeEnemy. */
+    FString EnemyName = TEXT("THORNBOUND");
     UPROPERTY(BlueprintReadOnly) FString LastRollLabel;
     float LastRollTime = -100.f;
     FAHTurnBudget Turn;
     bool bTurnActive = false;
     bool bDodging = false;
     bool bDashing = false;
+    /** True after the Disengage action: this turn's movement provokes no reactions. */
+    bool bDisengaging = false;
+    /** World-time of the last opportunity attack this character made (HUD flash). */
+    float OpportunityFlashTime = -100.f;
     int32 Initiative = 0;
     int32 LastDamage = 0;
     float LastDamageTime = -100.f;
@@ -50,10 +57,29 @@ public:
     FString Feedback;
     FString MotionLabel=TEXT("ATACANDO");
     bool bCharacterReady = false;
+    bool bAncestrySelected=false;
+    EAHAncestry Ancestry=EAHAncestry::Human;
+    float BaseMovement=900.f;
+    void ChooseAncestry(EAHAncestry Choice);
+    static FString AncestryName(EAHAncestry Choice);
+    static FString AncestryTrait(EAHAncestry Choice);
     EAHHeroClass HeroClass = EAHHeroClass::Fighter;
     int32 AttackBonus = 5, DamageSides = 8, DamageModifier = 3, InitiativeBonus = 1;
     int32 ClassCharges = 2;
     bool bRaging = false;
+    int32 Level=1, Experience=0, Feat=0;
+    int32 SpellSlots2=0, SelectedSpellLevel=1;
+    bool bActionSurgeUsed=false, bReckless=false;
+    int32 GuardTurns=0;
+    void GainExperience(int32 Amount);
+    bool ChooseFeat(int32 Choice);
+    int32 MaxSpellSlots(int32 Rank) const;
+    bool HasSpellSlot() const;
+    void SpendSpellSlot();
+    void CycleSpellLevel();
+    void UseProgressionAbility();
+    FString ProgressionAbilityName() const;
+    void Rest();
 
     // ── Death saves (D&D 5e downed state) ────────────────────────────────────
     /** True when HP == 0 but death saves haven't been exhausted yet. */
@@ -115,7 +141,28 @@ public:
     void AddLog(const FString& Message);
     void Dash();
     void Dodge();
+    /** Action: this turn's movement no longer provokes opportunity attacks. */
+    void Disengage();
     void SecondWind();
+
+    // ── Reactions (opportunity attacks) ───────────────────────────────────────
+    /**
+     * Runs every frame. Tracks which hostiles' melee reach this character is
+     * currently standing inside, and fires one opportunity attack each time it
+     * leaves one under its own power during its own turn.
+     * The state must be a latch, not a per-frame distance comparison: a walking
+     * character crosses the reach boundary a few centimetres at a time, so no
+     * single frame ever spans the whole hysteresis band.
+     * Public so automation tests can step the state machine by hand.
+     */
+    void UpdateThreatState();
+
+    /**
+     * Spends this character's reaction on a free attack against a hostile that
+     * just left its melee reach.  Returns false when the reaction is unavailable,
+     * the line is blocked, or either side cannot fight.
+     */
+    bool TryOpportunityAttack(AAHCharacter* Mover, bool bConfirmed=false);
     void CheckArcana();
     bool TryAttack(AAHCharacter* Target);
     void ReceiveHit(int32 Damage, bool bPhysical = true);
@@ -158,6 +205,23 @@ private:
 
     /** Fraction of the attack animation length at which the fallback fires. */
     static constexpr float ImpactFraction = 0.35f;
+
+    /**
+     * Melee threat radius in centimeters.  A hostile that starts a movement step
+     * inside this radius and ends it outside provokes an opportunity attack.
+     * Matches the 190 cm reach used by TryAttack, with a small tolerance.
+     */
+    static constexpr float ThreatReach = 200.f;
+
+    /** A wounded foe breaks away from melee once per encounter. */
+    bool  bHasRetreated = false;
+    float RetreatUntil  = 0.f;
+
+    /** Hostiles whose melee reach this character is currently standing inside. */
+    UPROPERTY() TArray<TObjectPtr<AAHCharacter>> InReachOf;
+
+    /** Applies a level-1 archetype sheet plus ancestry traits. Shared by hero and foe. */
+    void ApplySheet(EAHHeroClass Choice);
 
     FVector PreviousLocation;
     bool bImpactResolved = false;     // prevents double-resolution (notify + timer)
