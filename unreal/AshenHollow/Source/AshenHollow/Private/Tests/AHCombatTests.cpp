@@ -181,6 +181,57 @@ bool FAHCombatTest::RunTest(const FString& Parameters)
         TestTrue(TEXT("Allies do not provoke each other"),
             Runner->ImpactText.IsEmpty() && Threat->Turn.bReaction);
     }
+    // ── Ranged attacks ───────────────────────────────────────────────────────
+    auto* Archer=World->SpawnActor<AAHCharacter>(FVector(12000,0,100),FRotator::ZeroRotator,Spawn);
+    auto* Quarry=World->SpawnActor<AAHCharacter>(FVector(12900,0,100),FRotator::ZeroRotator,Spawn);
+    if(TestNotNull(TEXT("Archer fixture"),Archer) && TestNotNull(TEXT("Quarry fixture"),Quarry))
+    {
+        Quarry->bEnemy=true; Quarry->Health=Quarry->MaxHealth=400; Quarry->ArmorClass=2;
+        Archer->ChooseAncestry(EAHAncestry::Human);
+        Archer->ChooseClass(EAHHeroClass::Wizard);
+        TestTrue(TEXT("The wizard carries a ranged attack"),Archer->HasRangedAttack());
+
+        Archer->StartTurn();
+        Quarry->SetActorLocation(FVector(12000.f+Archer->RangedReach()+500.f,0,100));
+        TestFalse(TEXT("A target beyond range is refused"),Archer->TryRangedAttack(Quarry));
+        TestTrue(TEXT("A refused shot keeps the action"),Archer->Turn.bAction);
+
+        // 900 cm is far outside melee reach. If the shot were still checked
+        // against the 210 cm melee limit it would resolve as a miss every time.
+        int32 Landed=0;
+        for(int32 Attempt=0;Attempt<6 && Landed==0;++Attempt)
+        {
+            Archer->StartTurn();
+            Quarry->SetActorLocation(FVector(12900,0,100));
+            Quarry->ImpactText.Reset();
+            const int32 QuarryBefore=Quarry->Health;
+            if(!TestTrue(TEXT("A target inside range is shot"),Archer->TryRangedAttack(Quarry))) break;
+            TestFalse(TEXT("The shot spends the action"),Archer->Turn.bAction);
+            TestEqual(TEXT("No damage before the shot lands"),Quarry->Health,QuarryBefore);
+            Archer->OnMeleeImpactNotify();
+            TestFalse(TEXT("A shot always reports an outcome"),Quarry->ImpactText.IsEmpty());
+            if(Quarry->Health<QuarryBefore) ++Landed;
+        }
+        TestTrue(TEXT("Shots land at range rather than being voided by melee reach"),Landed>0);
+
+        // Firing with someone in your face is disadvantaged.
+        Quarry->SetActorLocation(FVector(12900,0,100));
+        TestFalse(TEXT("Nothing threatens an archer at range"),Archer->IsThreatenedInMelee());
+        Quarry->SetActorLocation(FVector(12100,0,100));
+        TestTrue(TEXT("A foe inside reach threatens the archer"),Archer->IsThreatenedInMelee());
+
+        // Melee-only archetypes are unaffected.
+        auto* Brawler=World->SpawnActor<AAHCharacter>(FVector(15000,0,100),FRotator::ZeroRotator,Spawn);
+        if(TestNotNull(TEXT("Melee fixture"),Brawler))
+        {
+            Brawler->ChooseAncestry(EAHAncestry::Human);
+            Brawler->ChooseClass(EAHHeroClass::Fighter);
+            TestFalse(TEXT("A melee archetype has no ranged attack"),Brawler->HasRangedAttack());
+            Brawler->StartTurn();
+            TestFalse(TEXT("A melee archetype cannot shoot"),Brawler->TryRangedAttack(Quarry));
+            TestTrue(TEXT("A refused shot costs a melee archetype nothing"),Brawler->Turn.bAction);
+        }
+    }
     GEngine->DestroyWorldContext(World); World->DestroyWorld(false); return true;
 }
 #endif

@@ -171,3 +171,119 @@ aliados não provocando entre si.
 (`Scripts/Build-Editor.ps1`), `Scripts/Test-Rules.ps1` e `Scripts/Test-Navigation.ps1`
 precisam ser rodados antes de considerar a etapa concluída, e o relatório JSON
 correspondente deve ser registrado aqui como nas etapas anteriores.
+
+## Classes e ancestralidades como dados
+
+`AHClassData.h` / `AHClassData.cpp` reúnem em duas tabelas o que antes estava espalhado
+como `switch` e vetores de quatro posições em `AHCharacter`, `AHProgression`, `AHCombatHUD`
+e `AHEquipmentComponent`. Todos indexavam pelo enum de classe: `WeaponAnimations[HeroClass]`,
+`Growth[]={8,9,7,6}`, `Names[]` do inimigo e do nível 2, `HP[]={12,14,10,8}` e
+`AC[]={16,14,18,12}` da tela de criação, além dos `switch` de cor e de ícone. Uma quinta
+classe leria além do fim de cada um desses vetores — o que não quebra de forma confiável,
+apenas devolve lixo.
+
+`FAHClassSheet` guarda ficha, nomes, ícone, cor, arma e crescimento por nível.
+`FAHAncestrySheet` guarda deslocamento, escala, bônus e o traço de sorte. `AHRules::Class`
+e `AHRules::Ancestry` fazem acesso com `Clamp`, e dois `static_assert` exigem uma linha de
+tabela para cada valor do enum. O equipamento passou a ser configurado por `EAHWeaponKind`,
+não por classe: espada e maça carregam escudo, cajado acende a ponta.
+
+Nada de comportamento mudou nesta etapa. A suíte `ClassesAndLocomotion` trava os números:
+os quatro arquétipos e as quatro ancestralidades precisam devolver exatamente os mesmos
+valores que os `switch` escritos à mão devolviam.
+
+### O que ainda bloqueia as oito classes restantes
+
+- **A tela de criação desenha uma única fileira de quatro cartas.** A geometria
+  (`X=225+I*288`, cartas de 268 px no painel de 1200 px) é escrita para exatamente quatro.
+  Doze classes exigem uma grade antes de qualquer coisa.
+- **Não existe ataque à distância.** Patrulheiro usa arco longo; bruxo, druida e feiticeiro
+  abrem com truques à distância. Mísseis Mágicos acerta automaticamente e não serve de base.
+  Falta rolagem de ataque a distância, linha de visão, projétil e desvantagem ao atirar
+  em corpo a corpo.
+- **Só existem quatro clipes de ataque** (espada, machado, maça, cajado) e um de conjuração.
+  Monge precisa dos clipes desarmados do pacote de manequins; arco não tem animação.
+- **`CanUseClassAbility` e `UseClassAbility` continuam com `switch` por classe**, porque são
+  comportamento e não dados. Cada classe nova precisa de um ramo ali.
+
+Validação pendente: esta etapa não foi compilada nem testada neste computador.
+
+## Tela de criação em grade
+
+A tela desenhava uma fileira fixa de quatro cartas em `X=225+I*288`, com 268 px de largura
+dentro de um painel de 1200 px. Doze arquétipos desenhariam para fora da tela.
+
+O layout agora é derivado do tamanho da tabela. Até oito entradas usam quatro colunas;
+acima disso, seis. A largura e a altura da carta saem da área disponível dividida pelas
+colunas e linhas, e `Unit = Largura / 268` escala o texto e todos os deslocamentos internos,
+que passaram a ser frações da altura da carta em vez de pixels absolutos. Cada linha é
+centralizada de forma independente, então uma última linha incompleta não fica encostada
+à esquerda.
+
+Com quatro classes o resultado é a fileira anterior, deslocada 9 px à direita: a fileira
+original não estava centralizada no painel e agora está. **O caminho de múltiplas linhas
+ainda não foi exercitado** — só existirão mais de quatro entradas quando as classes novas
+entrarem.
+
+## Ataque à distância
+
+`FAHClassSheet` ganhou `RangedRange`, `RangedSides`, `RangedBonus` e `RangedName`. Alcance
+zero significa que o arquétipo só luta corpo a corpo, que é o caso de guerreiro, bárbaro e
+clérigo. O mago recebeu Raio de Fogo: 18 m, 1d10, sem custo de recurso.
+
+`TryRangedAttack` gasta a ação, confere alcance e linha de visão, rola o ataque e reaproveita
+toda a máquina de impacto do golpe corpo a corpo — mesmo marcador de animação, mesmo
+temporizador de segurança, mesma resolução única. A diferença está em `PendingRange`: quando
+maior que zero, `ResolveImpact` valida contra o alcance da arma em vez dos 210 cm do corpo a
+corpo. Sem isso, todo disparo além de dois metros seria anulado como se o alvo tivesse
+escapado. O projétil reaproveita `AAHMagicVisual`, e o gesto é `AH_Cast`, porque não existe
+animação de arco nem de conjuração rápida.
+
+Atirar com um inimigo ao alcance de corpo a corpo impõe desvantagem, conforme o SRD.
+`IsThreatenedInMelee` responde por isso e a dica do botão Ataque avisa antes do disparo.
+O inimigo sorteado também atira quando o arquétipo tem alcance, em vez de fechar distância.
+
+Clicar num inimigo ou apertar Q dispara de onde se está, sem caminhar, quando a classe tem
+alcance e o alvo está visível. Classes corpo a corpo continuam se aproximando como antes.
+
+A suíte de combate cobre: alvo além do alcance recusado sem gastar ação, disparo a 900 cm
+que efetivamente causa dano (prova de que o limite de corpo a corpo não o anula), ameaça em
+corpo a corpo detectada, e arquétipo sem alcance recusando o disparo sem custo.
+
+Validação pendente: nada disso foi compilado nem executado neste computador.
+
+## Sete ancestralidades e tipos de dano
+
+Meio-orc, tiefling e draconato entraram. A tela de ancestralidade passa a ter duas fileiras
+— quatro e três — e este é o primeiro uso real do caminho de múltiplas linhas da grade.
+
+Os traços exigiram uma mudança de base. `ReceiveHit` recebia `bool bPhysical`, que só sabia
+dizer "a fúria reduz isto". Resistência a fogo precisa de um tipo real, então o parâmetro
+virou `EAHDamageType { Physical, Fire, Force }`. Mísseis Mágicos passam `Force`, o sopro
+passa `Fire`, e todo o resto continua `Physical` por padrão. Fúria reduz apenas físico;
+resistência a fogo reduz apenas fogo; não se acumulam porque não tratam do mesmo tipo.
+
+| Ancestralidade | Traço |
+|---|---|
+| Meio-orc | +1 de dano; recusa uma queda a 0 PV por descanso, ficando de pé com 1 PV |
+| Tiefling | +1 CA; dano de fogo pela metade |
+| Draconato | +1 de dano; fogo pela metade; sopro dracônico 2d6 em cone de 4,5 m, uma vez por descanso |
+
+Perseverança implacável é verificada logo após os pontos de vida chegarem a zero e antes da
+transição para nocauteado, então o personagem simplesmente continua de pé. O texto flutuante
+mostra o dano e `RESISTE!`.
+
+O sopro gasta a ação, vira para o hostil mais próximo antes de disparar — para não punir o
+ângulo da câmera — e atinge todos os hostis dentro de 4,5 m num cone de cerca de 70 graus.
+**Testes de resistência ainda não existem no jogo**, então o sopro simplesmente acerta; em
+5e caberia um teste de Destreza para metade do dano. Tecla T, botão na coluna lateral junto
+de Surto e Círculo. O inimigo sorteado também usa o sopro quando é draconato.
+
+Duas travas antigas foram removidas no caminho: `CombatCommand` recusava índices de raça e
+de classe acima de 4, o que teria descartado silenciosamente as três ancestralidades novas.
+
+A suíte `ClassesAndLocomotion` cobre as sete linhas da tabela, fogo reduzido no tiefling mas
+não em aço, a recusa de queda funcionando uma vez e não duas, o sopro queimando um alvo à
+frente e poupando um atrás, e o descanso devolvendo ambos.
+
+Validação pendente: não compilado nem executado neste computador.

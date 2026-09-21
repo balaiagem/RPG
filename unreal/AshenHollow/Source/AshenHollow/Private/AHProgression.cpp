@@ -4,7 +4,7 @@
 #include "TimerManager.h"
 int32 AAHCharacter::MaxSpellSlots(int32 Rank) const
 {
-    if(HeroClass!=EAHHeroClass::Cleric && HeroClass!=EAHHeroClass::Wizard) return 0;
+    if(!AHRules::Class(HeroClass).bCaster) return 0;
     const int32 First[]={0,2,3,4,4},Second[]={0,0,0,2,3};
     return Rank==1?First[FMath::Clamp(Level,1,4)]:Rank==2?Second[FMath::Clamp(Level,1,4)]:0;
 }
@@ -15,12 +15,13 @@ void AAHCharacter::GainExperience(int32 Amount)
 {
     if(bEnemy || !bCharacterReady || Amount<=0) return;
     Experience=FMath::Min(2700,Experience+Amount);
-    const int32 Thresholds[]={0,300,900,2700},Growth[]={8,9,7,6};
+    const int32 Thresholds[]={0,300,900,2700};
     while(Level<4 && Experience>=Thresholds[Level])
     {
         const int32 Old1=MaxSpellSlots(1),Old2=MaxSpellSlots(2);
         ++Level;
-        const int32 HP=Growth[static_cast<int32>(HeroClass)]+(Ancestry==EAHAncestry::Dwarf?1:0);
+        const int32 HP=AHRules::Class(HeroClass).HitPointGrowth
+                      +AHRules::Ancestry(Ancestry).HealthPerLevel;
         MaxHealth+=HP; if(IsAlive()) Health+=HP;
         if(MaxSpellSlots(1)>0) ClassCharges+=MaxSpellSlots(1)-Old1;
         SpellSlots2+=MaxSpellSlots(2)-Old2;
@@ -38,8 +39,7 @@ bool AAHCharacter::ChooseFeat(int32 Choice)
 }
 FString AAHCharacter::ProgressionAbilityName() const
 {
-    const TCHAR* Names[]={TEXT("SURTO"),TEXT("TEMERARIO"),TEXT("ESCUDO"),TEXT("VIDA FALSA")};
-    return Names[static_cast<int32>(HeroClass)];
+    return AHRules::Class(HeroClass).ProgressionName;
 }
 void AAHCharacter::UseProgressionAbility()
 {
@@ -76,7 +76,8 @@ void AAHCharacter::Rest()
     GuardTurns=0; bReckless=false; bRaging=false; RageTurns=0; TempHP=0;
     bDowned=false; bStabilized=false; DeathSuccesses=DeathFailures=0;
     bSecondWindUsed=bActionSurgeUsed=false; bHasRetreated=false;
-    Health=MaxHealth; ClassCharges=MaxSpellSlots(1)>0?MaxSpellSlots(1):HeroClass==EAHHeroClass::Fighter?1:2;
+    bRelentlessUsed=false; bBreathUsed=false;
+    Health=MaxHealth; ClassCharges=MaxSpellSlots(1)>0?MaxSpellSlots(1):AHRules::Class(HeroClass).ClassCharges;
     SpellSlots2=MaxSpellSlots(2); SelectedSpellLevel=1;
     AnimationEnds=ReactionEnds=0; bIsAttacking=false; PendingTarget=nullptr;
     InReachOf.Reset(); GetCharacterMovement()->SetMovementMode(MOVE_Walking);

@@ -33,27 +33,27 @@ void UAHEquipmentComponent::Part(USceneComponent* Parent,UStaticMesh* Mesh,UMate
     P->SetRelativeLocation(Position); P->SetRelativeScale3D(Scale); P->SetRelativeRotation(Rotation);
     P->RegisterComponent(); Parts.Add(P);
 }
-void UAHEquipmentComponent::Configure(EAHHeroClass Class)
+void UAHEquipmentComponent::Configure(EAHWeaponKind Kind)
 {
     for(int32 I=Parts.Num()-1;I>=0;--I) if(IsValid(Parts[I])) Parts[I]->DestroyComponent();
     Parts.Reset(); Grip=Anchor(TEXT("hand_r")); TipHeight=75;
-    const bool Staff=Class==EAHHeroClass::Wizard;
+    const bool Staff=Kind==EAHWeaponKind::Staff;
     Part(Grip,Cylinder,Leather,FVector(0,0,Staff?15:0),FVector(.045,.045,Staff?1.45:.3));
     for(float Z:{-12.f,12.f}) Part(Grip,Cylinder,Gold,FVector(0,0,Z),FVector(.065,.065,.035));
-    if(Class==EAHHeroClass::Fighter)
+    if(Kind==EAHWeaponKind::Sword)
     {
         Part(Grip,Cube,Gold,FVector(0,0,17),FVector(.05,.27,.045));
         Part(Grip,Cube,Steel,FVector(0,0,48),FVector(.024,.085,.60));
         Part(Grip,Cube,Gold,FVector(0,0,45),FVector(.03,.015,.47));
         Part(Grip,Sphere,Gold,FVector(0,0,-17),FVector(.09));
     }
-    else if(Class==EAHHeroClass::Barbarian)
+    else if(Kind==EAHWeaponKind::Axe)
     {
         Part(Grip,Cylinder,Leather,FVector(0,0,27),FVector(.055,.055,.85));
         for(float Sign:{-1.f,1.f}) Part(Grip,Cube,Steel,FVector(0,Sign*16,60),FVector(.045,.29,.28),FRotator(0,0,Sign*18));
         Part(Grip,Sphere,Gold,FVector(0,0,61),FVector(.10));
     }
-    else if(Class==EAHHeroClass::Cleric)
+    else if(Kind==EAHWeaponKind::Mace)
     {
         Part(Grip,Cylinder,Steel,FVector(0,0,30),FVector(.04,.04,.55));
         for(int I=0;I<4;++I) Part(Grip,Cube,Gold,FVector(0,0,57),FVector(.22,.035,.23),FRotator(0,I*45,0));
@@ -65,7 +65,7 @@ void UAHEquipmentComponent::Configure(EAHHeroClass Class)
         Part(Grip,Sphere,Glow,FVector(0,0,94),FVector(.17,.17,.31));
         TipHeight=110;
     }
-    if(Class==EAHHeroClass::Fighter || Class==EAHHeroClass::Cleric)
+    if(Kind==EAHWeaponKind::Sword || Kind==EAHWeaponKind::Mace)
     {
         auto* Shield=Anchor(TEXT("hand_l"));
         Part(Shield,Cylinder,Gold,FVector(0,0,0),FVector(.50,.50,.055),FRotator(90,0,0));

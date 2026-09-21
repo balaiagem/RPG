@@ -5,14 +5,14 @@
 class USceneComponent;
 class UMaterialInterface;
 class UStaticMesh;
-enum class EAHHeroClass:uint8;
+enum class EAHWeaponKind:uint8;
 UCLASS()
 class ASHENHOLLOW_API UAHEquipmentComponent:public UActorComponent
 {
     GENERATED_BODY()
 public:
     UAHEquipmentComponent();
-    void Configure(EAHHeroClass Class);
+    void Configure(EAHWeaponKind Kind);
     FVector Tip() const;
 private:
     UPROPERTY() TArray<TObjectPtr<USceneComponent>> Parts;

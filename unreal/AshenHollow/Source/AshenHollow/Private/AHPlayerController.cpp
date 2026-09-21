@@ -64,6 +64,7 @@ void AAHPlayerController::SetupInputComponent()
     Bind(EKeys::Enter, &AAHPlayerController::EndTurn);
     Bind(EKeys::R, &AAHPlayerController::Dash);
     Bind(EKeys::X, &AAHPlayerController::DisengageAction);
+    Bind(EKeys::T, &AAHPlayerController::BreathAction);
     Bind(EKeys::F6, &AAHPlayerController::CyclePerformance);
     if (auto* Subsystem = ULocalPlayer::GetSubsystem<UEnhancedInputLocalPlayerSubsystem>(GetLocalPlayer()))
     {
@@ -85,6 +86,8 @@ void AAHPlayerController::MoveToCursor()
         bQueuedMove=false;
         if(Hero->IsBusy()) { Hero->Feedback=TEXT("Aguarde o fim da ação para atacar"); return; }
         if (!Hero->Turn.bAction) { Hero->Feedback=TEXT("Ação já utilizada neste turno"); return; }
+        // A shooter fires from where it stands rather than walking into reach.
+        if (Hero->HasRangedAttack() && Hero->TryRangedAttack(Enemy)) { AttackTarget=nullptr; return; }
         AttackTarget = Enemy;
         UAIBlueprintHelperLibrary::SimpleMoveToActor(this, Enemy);
         return;
@@ -157,16 +160,21 @@ void AAHPlayerController::AttackNearest()
     auto* Hero = Cast<AAHCharacter>(GetPawn());
     if (!Hero || !Hero->CanAct() || !Hero->Turn.bAction) return;
     AttackTarget=nullptr;
-    float Best = 1600.f;
+    float Best = Hero->HasRangedAttack() ? Hero->RangedReach() : 1600.f;
+    AAHCharacter* Found=nullptr;
     for (TActorIterator<AAHCharacter> It(GetWorld()); It; ++It)
     {
         const float Distance = FVector::Dist2D(Hero->GetActorLocation(), It->GetActorLocation());
-        if (It->bEnemy && It->IsAlive() && Distance < Best) { Best = Distance; AttackTarget = *It; }
+        if (It->bEnemy && It->IsAlive() && Distance < Best) { Best = Distance; Found = *It; }
     }
-    if (AttackTarget) UAIBlueprintHelperLibrary::SimpleMoveToActor(this, AttackTarget);
+    if (!Found) return;
+    if (Hero->HasRangedAttack() && Hero->TryRangedAttack(Found)) return;
+    AttackTarget = Found;
+    UAIBlueprintHelperLibrary::SimpleMoveToActor(this, AttackTarget);
 }
 
 void AAHPlayerController::Heal() { if (auto* Hero = Cast<AAHCharacter>(GetPawn())) Hero->UseClassAbility(); }
+void AAHPlayerController::BreathAction() { if (auto* Hero = Cast<AAHCharacter>(GetPawn())) Hero->UseRacialAbility(); }
 void AAHPlayerController::DisengageAction()
 {
     bQueuedMove=false;
@@ -217,13 +225,14 @@ void AAHPlayerController::CombatCommand(FName Command)
     if(ProgressHero)
     {
         if(Command==TEXT("Feature")) { ProgressHero->UseProgressionAbility(); return; }
+        if(Command==TEXT("Breath")) { ProgressHero->UseRacialAbility(); return; }
         if(Command==TEXT("Slot")) { ProgressHero->CycleSpellLevel(); return; }
         if(Command.ToString().StartsWith(TEXT("Feat"))) { ProgressHero->ChooseFeat(FCString::Atoi(*Command.ToString().Right(1))); return; }
     }
     if(Command.ToString().StartsWith(TEXT("Race")))
     {
         const int32 Index=FCString::Atoi(*Command.ToString().Right(1));
-        if(Index>=0 && Index<4) if(auto* Hero=Cast<AAHCharacter>(GetPawn())) Hero->ChooseAncestry(static_cast<EAHAncestry>(Index));
+        if(Index>=0 && Index<AHRules::AncestryCount()) if(auto* Hero=Cast<AAHCharacter>(GetPawn())) Hero->ChooseAncestry(static_cast<EAHAncestry>(Index));
         return;
     }
     if(Command==TEXT("BackAncestry"))
@@ -234,7 +243,7 @@ void AAHPlayerController::CombatCommand(FName Command)
     if(Command.ToString().StartsWith(TEXT("Class")))
     {
         const int32 Index=FCString::Atoi(*Command.ToString().Right(1));
-        if(Index>=0 && Index<4) if(auto* Hero=Cast<AAHCharacter>(GetPawn())) Hero->ChooseClass(static_cast<EAHHeroClass>(Index));
+        if(Index>=0 && Index<AHRules::ClassCount()) if(auto* Hero=Cast<AAHCharacter>(GetPawn())) Hero->ChooseClass(static_cast<EAHHeroClass>(Index));
         return;
     }
     if(Command==TEXT("Attack")) AttackNearest();

@@ -34,6 +34,7 @@ private:
     void DeclineReaction() { ResolveReaction(false); }
     void AttackNearest();
     void Heal();
+    void BreathAction();
     void DisengageAction();
     void Check();
     void Restart();

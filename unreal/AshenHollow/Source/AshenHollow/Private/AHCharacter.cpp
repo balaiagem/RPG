@@ -100,20 +100,19 @@ void AAHCharacter::BecomeEnemy()
 
     // Roll the foe's archetype so no two encounters open the same way.
     FRandomStream Pick; Pick.GenerateNewSeed();
-    HeroClass = static_cast<EAHHeroClass>(Pick.RandRange(0, 3));
-    Ancestry  = static_cast<EAHAncestry>(Pick.RandRange(0, 3));
+    HeroClass = static_cast<EAHHeroClass>(Pick.RandRange(0, AHRules::ClassCount()-1));
+    Ancestry  = static_cast<EAHAncestry>(Pick.RandRange(0, AHRules::AncestryCount()-1));
     ApplySheet(HeroClass);
 
     // Foes are a little tougher than a level-1 hero so a duel lasts a few rounds.
     MaxHealth += 6;
     Health = MaxHealth;
 
-    const TCHAR* Names[] = { TEXT("ESPADACHIM"), TEXT("SAQUEADOR"), TEXT("ORÁCULO"), TEXT("FEITICEIRO") };
-    EnemyName = Names[FMath::Clamp(static_cast<int32>(HeroClass), 0, 3)];
+    EnemyName = AHRules::Class(HeroClass).FoeName;
 
     GetCharacterMovement()->MaxWalkSpeed = 330.f;
     SpawnDefaultController();
-    Equipment->Configure(HeroClass);
+    Equipment->Configure(AHRules::Class(HeroClass).Weapon);
 }
 
 // ── Turn management ───────────────────────────────────────────────────────────
@@ -149,7 +148,7 @@ void AAHCharacter::RollDeathSave()
 {
     int32 SaveDiscarded=0; bool bSaveLucky=false;
     const int32 Roll = UAHDiceRules::RollD20Detailed(Dice,0,
-        !bEnemy && Ancestry==EAHAncestry::Halfling,SaveDiscarded,bSaveLucky);
+        IsLucky(),SaveDiscarded,bSaveLucky);
     DeathSaveRollTime = GetWorld()->GetTimeSeconds();
     LastRoll=FAHDiceOutcome(); LastRoll.NaturalRoll=Roll; LastRoll.Total=Roll; LastRoll.Target=10;
     LastRoll.bLuckyReroll=bSaveLucky;
@@ -371,6 +370,19 @@ void AAHCharacter::Tick(float DeltaSeconds)
         if (bWorth) { AI->StopMovement(); UseClassAbility(); return; }
     }
 
+    if (CanUseRacialAbility() && ToHero <= BreathReach)
+    {
+        AI->StopMovement();
+        UseRacialAbility();
+        return;
+    }
+
+    if (HasRangedAttack() && Turn.bAction && ToHero <= RangedReach())
+    {
+        AI->StopMovement();
+        if (TryRangedAttack(Hero)) return;
+    }
+
     if (ToHero < 125.f)
     {
         AI->StopMovement();
@@ -450,14 +462,14 @@ bool AAHCharacter::TryOpportunityAttack(AAHCharacter* Mover, bool bConfirmed)
         DamageSides,
         DamageModifier + (bRaging ? 2 : 0),
         (Mover->bReckless?1:0)-(Mover->bDodging?1:0),
-        !bEnemy && Ancestry == EAHAncestry::Halfling);
+        IsLucky());
 
     // Cosmetic swing only. A reaction must never make the reacting character
     // busy, so bIsAttacking / AnimationEnds are deliberately left untouched.
     if (auto* Anim = GetMesh()->GetAnimInstance())
     {
-        UAnimationAsset* Clip = WeaponAnimations.IsValidIndex(static_cast<int32>(HeroClass))
-            ? WeaponAnimations[static_cast<int32>(HeroClass)].Get()
+        UAnimationAsset* Clip = WeaponAnimations.IsValidIndex(static_cast<int32>(AHRules::Class(HeroClass).Weapon))
+            ? WeaponAnimations[static_cast<int32>(AHRules::Class(HeroClass).Weapon)].Get()
             : AttackAnimation.Get();
         if (auto* Sequence = Cast<UAnimSequenceBase>(Clip))
         {
@@ -504,8 +516,9 @@ bool AAHCharacter::TryOpportunityAttack(AAHCharacter* Mover, bool bConfirmed)
 
 void AAHCharacter::PlayAttack()
 {
-    MotionLabel=PendingSpellDamage>0?TEXT("CONJURANDO"):TEXT("ATACANDO");
-    UAnimationAsset* Clip=PendingSpellDamage>0?CastAnimation.Get():WeaponAnimations[static_cast<uint8>(HeroClass)].Get();
+    const bool bShot = PendingRange > 0.f;
+    MotionLabel=PendingSpellDamage>0?TEXT("CONJURANDO"):bShot?TEXT("MIRANDO"):TEXT("ATACANDO");
+    UAnimationAsset* Clip=(PendingSpellDamage>0||bShot)?CastAnimation.Get():WeaponAnimations[static_cast<int32>(AHRules::Class(HeroClass).Weapon)].Get();
     auto* Sequence=Cast<UAnimSequenceBase>(Clip?Clip:AttackAnimation.Get());
     if (Sequence && GetMesh()->GetAnimInstance())
     {
@@ -522,7 +535,7 @@ void AAHCharacter::PlayAttack()
         ImpactAt = AnimationEnds;
     bIsAttacking    = true;
     bImpactResolved = false;
-    if(PendingSpellDamage>0 && PendingTarget && GetNetMode()!=NM_DedicatedServer)
+    if((PendingSpellDamage>0||bShot) && PendingTarget && GetNetMode()!=NM_DedicatedServer)
     {
         float Travel=Length*ImpactFraction;
         if(Sequence)
@@ -577,12 +590,120 @@ bool AAHCharacter::TryAttack(AAHCharacter* Target)
         1,
         DamageSides,
         DamageModifier + (bRaging?2:0),
-        ((bReckless || Target->bReckless)?1:0)-(Target->bDodging?1:0),!bEnemy && Ancestry==EAHAncestry::Halfling);
+        ((bReckless || Target->bReckless)?1:0)-(Target->bDodging?1:0),IsLucky());
     PendingTarget = Target;
     bAttackedSinceTurnEnd=true;
 
     PlayAttack();
     Feedback = TEXT("Resolvendo o ataque...");
+    return true;
+}
+
+FString AAHCharacter::RacialAbilityName() const
+{
+    return AHRules::Ancestry(Ancestry).bBreathWeapon ? TEXT("SOPRO") : FString();
+}
+
+bool AAHCharacter::CanUseRacialAbility() const
+{
+    return AHRules::Ancestry(Ancestry).bBreathWeapon && !bBreathUsed && CanAct() && Turn.bAction;
+}
+
+void AAHCharacter::UseRacialAbility()
+{
+    if (!CanUseRacialAbility()) return;
+    Turn.SpendAction();
+    bBreathUsed = true;
+
+    // Face the nearest hostile so the cone is forgiving about where you clicked.
+    AAHCharacter* Nearest=nullptr; float Best=BreathReach;
+    for (TActorIterator<AAHCharacter> It(GetWorld()); It; ++It)
+    {
+        AAHCharacter* Other=*It;
+        if (!IsValid(Other)||Other==this||Other->bEnemy==bEnemy||!Other->IsAlive()) continue;
+        const float Distance=FVector::Dist2D(GetActorLocation(),Other->GetActorLocation());
+        if (Distance<Best) { Best=Distance; Nearest=Other; }
+    }
+    if (Nearest)
+        SetActorRotation(FRotator(0,(Nearest->GetActorLocation()-GetActorLocation()).Rotation().Yaw,0));
+
+    // Saving throws are not modelled yet, so the breath simply lands.
+    const int32 Damage = Dice.RandRange(1,6) + Dice.RandRange(1,6);
+    const FVector Forward = GetActorForwardVector();
+    int32 Caught = 0;
+    TArray<AAHCharacter*, TInlineAllocator<4>> InCone;
+    for (TActorIterator<AAHCharacter> It(GetWorld()); It; ++It)
+    {
+        AAHCharacter* Other=*It;
+        if (!IsValid(Other)||Other==this||Other->bEnemy==bEnemy||!Other->IsAlive()) continue;
+        const FVector To=Other->GetActorLocation()-GetActorLocation();
+        if (To.Size2D()>BreathReach) continue;
+        if (FVector::DotProduct(Forward,To.GetSafeNormal2D())<0.35f) continue;   // ~70 degree cone
+        InCone.Add(Other);
+    }
+    for (AAHCharacter* Burned : InCone) { Burned->ReceiveHit(Damage,EAHDamageType::Fire); ++Caught; }
+
+    PlayGesture(CastAnimation);
+    AAHCombatBurst::Emit(GetWorld(),GetActorLocation()+Forward*130.f+FVector(0,0,40),EAHBurst::Rage);
+    Feedback = FString::Printf(TEXT("Sopro dracônico: %d de dano de fogo em %d alvo(s)"),Damage,Caught);
+    AddLog(Feedback);
+}
+
+bool AAHCharacter::IsThreatenedInMelee() const
+{
+    for (TActorIterator<AAHCharacter> It(GetWorld()); It; ++It)
+    {
+        const AAHCharacter* Other = *It;
+        if (!IsValid(Other) || Other == this || Other->bEnemy == bEnemy) continue;
+        if (!Other->IsAlive() || Other->bDowned) continue;
+        if (FVector::Dist2D(GetActorLocation(), Other->GetActorLocation()) <= ThreatReach) return true;
+    }
+    return false;
+}
+
+bool AAHCharacter::TryRangedAttack(AAHCharacter* Target)
+{
+    const FAHClassSheet& Sheet = AHRules::Class(HeroClass);
+    if (Sheet.RangedRange <= 0) return false;
+    if (!CanAct() || !Turn.bAction) return false;
+    if (!IsValid(Target) || !Target->IsAlive() || Target->bEnemy == bEnemy) return false;
+
+    if (FVector::Dist2D(GetActorLocation(), Target->GetActorLocation()) > Sheet.RangedRange)
+    {
+        Feedback = FString::Printf(TEXT("Alvo além do alcance de %.0f m"), Sheet.RangedRange/100.f);
+        return false;
+    }
+    FHitResult Obstacle;
+    FCollisionQueryParams Query(SCENE_QUERY_STAT(RangedSight), false, this);
+    Query.AddIgnoredActor(Target);
+    if (GetWorld()->LineTraceSingleByChannel(Obstacle, GetActorLocation()+FVector(0,0,40),
+            Target->GetActorLocation()+FVector(0,0,40), ECC_Visibility, Query))
+    {
+        Feedback = TEXT("Sem linha de visão até o alvo");
+        return false;
+    }
+
+    Turn.SpendAction();
+    if (GetController()) GetController()->StopMovement();
+    GetCharacterMovement()->StopMovementImmediately();
+    SetActorRotation(FRotator(0, (Target->GetActorLocation()-GetActorLocation()).Rotation().Yaw, 0));
+
+    // Shooting with someone in your face is a disadvantaged shot.
+    const bool bCrowded = IsThreatenedInMelee();
+    PendingRoll = UAHDiceRules::RollAttack(
+        Dice, AttackBonus, Target->ArmorClass, 1,
+        Sheet.RangedSides, Sheet.RangedBonus,
+        ((bReckless || Target->bReckless) ? 1 : 0) - (Target->bDodging ? 1 : 0) - (bCrowded ? 1 : 0),
+        IsLucky());
+    PendingTarget = Target;
+    // A little tolerance so the target drifting a step does not void the shot.
+    PendingRange  = static_cast<float>(Sheet.RangedRange) + 80.f;
+    bAttackedSinceTurnEnd = true;
+
+    PlayAttack();
+    Feedback = bCrowded
+        ? FString::Printf(TEXT("%s com desvantagem: inimigo em corpo a corpo"), Sheet.RangedName)
+        : FString::Printf(TEXT("%s..."), Sheet.RangedName);
     return true;
 }
 
@@ -607,6 +728,7 @@ void AAHCharacter::ResolveImpact()
     auto* Target = PendingTarget.Get();
     PendingTarget  = nullptr;
     const int32 SpellDamage=PendingSpellDamage; PendingSpellDamage=0;
+    const float ShotRange=PendingRange; PendingRange=0.f;
     if (!IsAlive() || !IsValid(Target) || !Target->IsAlive()) return;
 
     if(SpellDamage>0)
@@ -617,7 +739,7 @@ void AAHCharacter::ResolveImpact()
         if(FVector::Dist(GetActorLocation(),Target->GetActorLocation())>1800.f ||
            GetWorld()->LineTraceSingleByChannel(Block,GetActorLocation(),Target->GetActorLocation(),ECC_Visibility,Sight))
         { AddLog(TEXT("Mísseis cancelados: alvo obstruído ou distante")); return; }
-        Target->ReceiveHit(Damage,false);
+        Target->ReceiveHit(Damage,EAHDamageType::Force);
         LastRollTime=-100.f;
         Feedback=FString::Printf(TEXT("Mísseis Mágicos: %d de dano de força"),Damage);
         AddLog(Feedback);
@@ -629,7 +751,8 @@ void AAHCharacter::ResolveImpact()
     FHitResult Obstacle;
     FCollisionQueryParams Query(SCENE_QUERY_STAT(ImpactSight), false, this);
     Query.AddIgnoredActor(Target);
-    if (FVector::Dist2D(GetActorLocation(), Target->GetActorLocation()) > 210.f
+    const float ReachLimit = ShotRange > 0.f ? ShotRange : 210.f;
+    if (FVector::Dist2D(GetActorLocation(), Target->GetActorLocation()) > ReachLimit
         || GetWorld()->LineTraceSingleByChannel(Obstacle, GetActorLocation(), Target->GetActorLocation(), ECC_Visibility, Query))
     {
         Result.bSuccess  = false;
@@ -639,7 +762,9 @@ void AAHCharacter::ResolveImpact()
 
     auto* Viewer = bEnemy ? Target : this;
     Viewer->LastRoll      = Result;
-    Viewer->LastRollLabel = bEnemy ? EnemyName + TEXT(" / ATAQUE") : FString(TEXT("SEU ATAQUE"));
+    Viewer->LastRollLabel = ShotRange > 0.f
+        ? (bEnemy ? EnemyName + TEXT(" / DISPARO") : FString(TEXT("SEU DISPARO")))
+        : (bEnemy ? EnemyName + TEXT(" / ATAQUE")  : FString(TEXT("SEU ATAQUE")));
     Viewer->LastRollTime  = GetWorld()->GetTimeSeconds();
 
     if (Result.bSuccess)
@@ -676,10 +801,13 @@ void AAHCharacter::ResolveImpact()
 
 // ── Other actions ─────────────────────────────────────────────────────────────
 
-void AAHCharacter::ReceiveHit(int32 Damage, bool bPhysical)
+void AAHCharacter::ReceiveHit(int32 Damage, EAHDamageType Type)
 {
     if ((!IsAlive() && !bDowned) || Damage <= 0) return;
-    if(bRaging && bPhysical) Damage/=2;
+    const FAHAncestrySheet& Blood = AHRules::Ancestry(Ancestry);
+    if (bRaging && Type == EAHDamageType::Physical) Damage/=2;
+    if (Blood.bFireResistant && Type == EAHDamageType::Fire) Damage/=2;
+    if (Damage <= 0) return;
     if(GuardTurns>0 && (Damage>=Health+TempHP || Dice.RandRange(1,20)+2<FMath::Max(10,Damage/2)))
     { GuardTurns=0; ArmorClass-=2; AddLog(TEXT("Concentracao encerrada")); }
     bDamagedSinceTurnEnd=true;
@@ -699,7 +827,7 @@ void AAHCharacter::ReceiveHit(int32 Damage, bool bPhysical)
             bImpactHealing = false; bLastImpactCritical = false;
             const FVector HitOrigin=GetActorLocation()+FVector(0,0,35);
             if(HitFX) UNiagaraFunctionLibrary::SpawnSystemAtLocation(GetWorld(),HitFX,HitOrigin,GetActorRotation());
-            else AAHCombatBurst::Emit(GetWorld(),HitOrigin,bPhysical?EAHBurst::Steel:EAHBurst::Force);
+            else AAHCombatBurst::Emit(GetWorld(),HitOrigin,Type==EAHDamageType::Physical?EAHBurst::Steel:EAHBurst::Force);
             return;
         }
     }
@@ -708,12 +836,22 @@ void AAHCharacter::ReceiveHit(int32 Damage, bool bPhysical)
     LastDamage = FMath::Min(Health, Damage);
     Health     = FMath::Max(0, Health - Damage);
     ImpactText = FString::Printf(TEXT("-%d"), LastDamage);
+    // Half-orc: one refusal to drop, per rest. Checked before the downed
+    // transition below so the character simply stays standing on 1 HP.
+    if (Health <= 0 && !bDowned && Blood.bRelentless && !bRelentlessUsed)
+    {
+        bRelentlessUsed = true;
+        Health = 1;
+        ImpactText = FString::Printf(TEXT("-%d  RESISTE!"), LastDamage);
+        Feedback = TEXT("Perseverança implacável: de pé com 1 PV.");
+        AddLog(Feedback);
+    }
     ImpactTextTime = LastDamageTime;
     bImpactHealing = false;
     bLastImpactCritical = false;
     const FVector HitOrigin=GetActorLocation()+FVector(0,0,35);
     if(HitFX) UNiagaraFunctionLibrary::SpawnSystemAtLocation(GetWorld(),HitFX,HitOrigin,GetActorRotation());
-    else AAHCombatBurst::Emit(GetWorld(),HitOrigin,bPhysical?EAHBurst::Steel:EAHBurst::Force);
+    else AAHCombatBurst::Emit(GetWorld(),HitOrigin,Type==EAHDamageType::Physical?EAHBurst::Steel:EAHBurst::Force);
 
     if (IsAlive())
     {
@@ -816,7 +954,7 @@ void AAHCharacter::CheckArcana()
 {
     if (!CanAct() || !Turn.SpendAction()) return;
     LastRoll      = UAHDiceRules::RollCheck(Dice, 1, 12, 0,
-        !bEnemy && Ancestry == EAHAncestry::Halfling);
+        IsLucky());
     LastRollLabel = TEXT("ARCANISMO / TESTE DE PERÍCIA");
     LastRollTime  = GetWorld()->GetTimeSeconds();
     PlayGesture(CastAnimation);
@@ -827,67 +965,52 @@ void AAHCharacter::CheckArcana()
 
 FString AAHCharacter::ClassName(EAHHeroClass Choice)
 {
-    switch(Choice) {
-    case EAHHeroClass::Fighter: return TEXT("GUERREIRO");
-    case EAHHeroClass::Barbarian: return TEXT("BÁRBARO");
-    case EAHHeroClass::Cleric: return TEXT("CLÉRIGO");
-    case EAHHeroClass::Wizard: return TEXT("MAGO");
-    default: return TEXT("CLASSE"); }
+    return AHRules::Class(Choice).Name;
 }
 void AAHCharacter::ApplySheet(EAHHeroClass Choice)
 {
-    HeroClass=Choice; ClassCharges=2;
-    switch(Choice) {
-    case EAHHeroClass::Fighter: MaxHealth=12; ArmorClass=16; AttackBonus=5; DamageSides=8; DamageModifier=3; InitiativeBonus=1; ClassCharges=1; break;
-    case EAHHeroClass::Barbarian: MaxHealth=14; ArmorClass=14; AttackBonus=5; DamageSides=12; DamageModifier=3; InitiativeBonus=2; break;
-    case EAHHeroClass::Cleric: MaxHealth=10; ArmorClass=18; AttackBonus=4; DamageSides=6; DamageModifier=2; InitiativeBonus=0; break;
-    case EAHHeroClass::Wizard: MaxHealth=8; ArmorClass=12; AttackBonus=2; DamageSides=6; DamageModifier=0; InitiativeBonus=2; break;
-    }
-    if(Ancestry==EAHAncestry::Human) ++InitiativeBonus;
-    if(Ancestry==EAHAncestry::Elf) ++ArmorClass;
-    if(Ancestry==EAHAncestry::Dwarf) ++MaxHealth;
-    BaseMovement=(Ancestry==EAHAncestry::Dwarf || Ancestry==EAHAncestry::Halfling)?750.f:900.f;
-    const float BodyScale=Ancestry==EAHAncestry::Dwarf?.82f:Ancestry==EAHAncestry::Halfling?.65f:1.f;
-    GetMesh()->SetRelativeScale3D(FVector(BodyScale));
+    HeroClass=Choice;
+    const FAHClassSheet& Sheet=AHRules::Class(Choice);
+    MaxHealth=Sheet.MaxHealth; ArmorClass=Sheet.ArmorClass; AttackBonus=Sheet.AttackBonus;
+    DamageSides=Sheet.DamageSides; DamageModifier=Sheet.DamageModifier;
+    InitiativeBonus=Sheet.InitiativeBonus; ClassCharges=Sheet.ClassCharges;
+
+    const FAHAncestrySheet& Blood=AHRules::Ancestry(Ancestry);
+    InitiativeBonus+=Blood.InitiativeBonus;
+    ArmorClass     +=Blood.ArmorBonus;
+    MaxHealth      +=Blood.HealthPerLevel;
+    DamageModifier +=Blood.DamageBonus;
+    BaseMovement    =Blood.Movement;
+    GetMesh()->SetRelativeScale3D(FVector(Blood.BodyScale));
 }
 void AAHCharacter::ChooseClass(EAHHeroClass Choice)
 {
-    if(bCharacterReady || bEnemy || static_cast<uint8>(Choice)>3) return;
+    if(bCharacterReady || bEnemy || static_cast<int32>(Choice)>=AHRules::ClassCount()) return;
     ApplySheet(Choice);
     Health=MaxHealth; bAncestrySelected=true; bCharacterReady=true;
-    Equipment->Configure(Choice);
+    Equipment->Configure(AHRules::Class(HeroClass).Weapon);
     Feedback=ClassName(Choice)+TEXT(" / nível 1");
 }
 void AAHCharacter::ChooseAncestry(EAHAncestry Choice)
 {
-    if(bCharacterReady || bEnemy || static_cast<uint8>(Choice)>3) return;
+    if(bCharacterReady || bEnemy || static_cast<int32>(Choice)>=AHRules::AncestryCount()) return;
     Ancestry=Choice; bAncestrySelected=true;
 }
 FString AAHCharacter::AncestryName(EAHAncestry Choice)
 {
-    const TCHAR* Names[]={TEXT("HUMANO"),TEXT("ELFO"),TEXT("ANÃO"),TEXT("HALFLING")};
-    return Names[FMath::Clamp(static_cast<int32>(Choice),0,3)];
+    return AHRules::Ancestry(Choice).Name;
 }
 FString AAHCharacter::AncestryTrait(EAHAncestry Choice)
 {
-    const TCHAR* Traits[]={TEXT("Versatilidade: +1 iniciativa | 9 m"),TEXT("Agilidade: +1 CA | 9 m"),TEXT("Tenacidade: +1 PV | 7,5 m"),TEXT("Sorte: rerrola 1 natural uma vez | 7,5 m")};
-    return Traits[FMath::Clamp(static_cast<int32>(Choice),0,3)];
+    return AHRules::Ancestry(Choice).Trait;
 }
 FString AAHCharacter::ClassAbilityName() const
 {
-    switch(HeroClass) {
-    case EAHHeroClass::Barbarian: return TEXT("FÚRIA");
-    case EAHHeroClass::Cleric: return TEXT("CURAR");
-    case EAHHeroClass::Wizard: return TEXT("MÍSSEIS");
-    default: return TEXT("FÔLEGO"); }
+    return AHRules::Class(HeroClass).AbilityName;
 }
 FString AAHCharacter::ClassAbilityDescription() const
 {
-    switch(HeroClass) {
-    case EAHHeroClass::Barbarian: return TEXT("Fúria / bônus / +2 dano corpo a corpo, resistência física / 2 usos por encontro");
-    case EAHHeroClass::Cleric: return TEXT("Curar Ferimentos / ação / cura própria 1d8+3 / 2 espaços por encontro");
-    case EAHHeroClass::Wizard: return TEXT("Mísseis Mágicos / ação / 3 dardos de 1d4+1 / alvo mais próximo até 18 m / 2 espaços");
-    default: return TEXT("Segundo Fôlego / bônus / cura 1d10+1 / 1 uso por encontro"); }
+    return AHRules::Class(HeroClass).AbilityDescription;
 }
 bool AAHCharacter::CanUseClassAbility() const
 {

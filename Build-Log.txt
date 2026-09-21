@@ -3,7 +3,6 @@ Running UnrealBuildTool: dotnet "..\..\Engine\Binaries\DotNET\UnrealBuildTool\Un
 Log file: C:\Users\lucas\AppData\Local\UnrealBuildTool\Log.txt
 Executing up to 4 actions based on MaxProcessorCount override
 UbaServer - Listening on 0.0.0.0:1345
-Invalidating makefile for AshenHollowEditor (source file added)
 UHT compiled-in object format Default
 Building AshenHollowEditor...
 ===== Toolchain Information =====
@@ -11,32 +10,31 @@ Using ISPC compiler (C:\Program Files\Epic Games\UE_5.8\Engine\Source\ThirdParty
   Intel(r) Implicit SPMD Program Compiler (Intel(r) ISPC), 1.24.0 (build commit  @ 20250404, LLVM 18.1.2) 
 Using Visual Studio 14.44.35228 toolchain (C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\VC\Tools\MSVC\14.44.35207) and Windows 10.0.22621.0 SDK (C:\Program Files (x86)\Windows Kits\10).
 =================================
-Using Unreal Build Accelerator local executor to run 18 action(s)
+Using Unreal Build Accelerator local executor to run 17 action(s)
   CPU 8 physical cores, 12 logical cores
-  Memory 15.64 GB physical, 18.02 GB/31.44 GB committed
+  Memory 15.64 GB physical, 20.1 GB/31.44 GB committed
   UBA Storage capacity 40 GB
-[1/18] Compile [x64] AHAnimInstance.cpp
-[2/18] Compile [x64] AHClassesTests.cpp
-[3/18] Compile [x64] AHCombatTests.cpp
-[4/18] Compile [x64] AHCombatHUD.cpp
-[5/18] Compile [x64] AHDiceRules.cpp
-[6/18] Compile [x64] AHDiceRulesTests.cpp
-[7/18] Compile [x64] AHEquipmentComponent.cpp
-[8/18] Compile [x64] AHCharacter.cpp
-[9/18] Compile [x64] AHGameMode.cpp
-[10/18] Compile [x64] AHNotify_MeleeImpact.cpp
-[11/18] Compile [x64] AHNavigationTests.cpp
-[12/18] Compile [x64] AHProgression.cpp
-[13/18] Compile [x64] AHProgressionTests.cpp
-[14/18] Compile [x64] AHPlayerController.cpp
-[15/18] Compile [x64] Module.AshenHollow.gen.cpp
-[16/18] Link [x64] UnrealEditor-AshenHollow.lib
-[17/18] Link [x64] UnrealEditor-AshenHollow.dll
-[18/18] WriteMetadata AshenHollowEditor.target [NoUba]
+[1/17] Compile [x64] AHAnimInstance.cpp
+[2/17] Compile [x64] AHClassData.cpp
+[3/17] Compile [x64] AHClassesTests.cpp
+[4/17] Compile [x64] AHCharacter.cpp
+[5/17] Compile [x64] AHCombatTests.cpp
+[6/17] Compile [x64] AHCombatHUD.cpp
+[7/17] Compile [x64] AHEquipmentComponent.cpp
+[8/17] Compile [x64] AHGameMode.cpp
+[9/17] Compile [x64] AHNotify_MeleeImpact.cpp
+[10/17] Compile [x64] AHNavigationTests.cpp
+[11/17] Compile [x64] AHProgression.cpp
+[12/17] Compile [x64] AHPlayerController.cpp
+[13/17] Compile [x64] AHProgressionTests.cpp
+[14/17] Compile [x64] Module.AshenHollow.gen.cpp
+[15/17] Link [x64] UnrealEditor-AshenHollow.lib
+[16/17] Link [x64] UnrealEditor-AshenHollow.dll
+[17/17] WriteMetadata AshenHollowEditor.target [NoUba]
 
-Total time in Unreal Build Accelerator local executor: 49.74 seconds
+Total time in Unreal Build Accelerator local executor: 57.58 seconds
 Output binary: C:\Program Files\Epic Games\UE_5.8\Engine\Binaries\Win64\UnrealEditor.exe
 
 Result: Succeeded
-Total execution time: 56.34 seconds
+Total execution time: 63.41 seconds
 Trace written to file C:\Users\lucas\AppData\Local\UnrealBuildTool\Trace.uba with size 13.0kb

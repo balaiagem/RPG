@@ -45,7 +45,7 @@ bool FAHClassesTest::RunTest(const FString& Parameters)
     Barb->ReceiveHit(5);
     TestEqual(TEXT("Temporary HP absorbs the resisted physical hit"),Barb->Health,14);
     TestEqual(TEXT("Rage halves physical damage before temporary HP"),Barb->TempHP,3);
-    Barb->ReceiveHit(5,false);
+    Barb->ReceiveHit(5,EAHDamageType::Force);
     TestEqual(TEXT("Force bypasses resistance and consumes remaining temporary HP"),Barb->Health,12);
     TestEqual(TEXT("Temporary HP is exhausted"),Barb->TempHP,0);
     Barb->FinishTurn(); Barb->StartTurn(); Barb->FinishTurn();
@@ -81,6 +81,119 @@ bool FAHClassesTest::RunTest(const FString& Parameters)
     const FTransform After=Mesh->GetSocketTransform(TEXT("foot_l"),RTS_Component);
     AddInfo(FString::Printf(TEXT("Locomotion speed %.1f; foot before %s; after %s"),Fighter->GetVelocity().Size2D(),*Before.ToString(),*After.ToString()));
     TestTrue(TEXT("Walking moves the foot by more than idle sway"),FVector::Dist(Before.GetLocation(),After.GetLocation())>5.f);
+    // ── Data tables ──────────────────────────────────────────────────────────
+    // These numbers were hand-written switch cases before. If a table row drifts,
+    // an archetype silently changes without anyone touching gameplay code.
+    TestEqual(TEXT("Every archetype has a row"),AHRules::ClassCount(),static_cast<int32>(EAHHeroClass::Count));
+    TestEqual(TEXT("Every ancestry has a row"),AHRules::AncestryCount(),static_cast<int32>(EAHAncestry::Count));
+    {
+        const int32 HP[]={12,14,10,8},AC[]={16,14,18,12},Atk[]={5,5,4,2};
+        const int32 Sides[]={8,12,6,6},Mod[]={3,3,2,0},Init[]={1,2,0,2};
+        const int32 Uses[]={1,2,2,2},Growth[]={8,9,7,6};
+        for(int32 I=0;I<AHRules::ClassCount();++I)
+        {
+            const FAHClassSheet& Sheet=AHRules::Class(static_cast<EAHHeroClass>(I));
+            TestEqual(TEXT("Archetype hit points"),Sheet.MaxHealth,HP[I]);
+            TestEqual(TEXT("Archetype armour class"),Sheet.ArmorClass,AC[I]);
+            TestEqual(TEXT("Archetype attack bonus"),Sheet.AttackBonus,Atk[I]);
+            TestEqual(TEXT("Archetype damage die"),Sheet.DamageSides,Sides[I]);
+            TestEqual(TEXT("Archetype damage bonus"),Sheet.DamageModifier,Mod[I]);
+            TestEqual(TEXT("Archetype initiative"),Sheet.InitiativeBonus,Init[I]);
+            TestEqual(TEXT("Archetype ability uses"),Sheet.ClassCharges,Uses[I]);
+            TestEqual(TEXT("Archetype hit points per level"),Sheet.HitPointGrowth,Growth[I]);
+            TestTrue(TEXT("Archetype names are filled in"),
+                Sheet.Name && Sheet.FoeName && Sheet.AbilityName && Sheet.Icon
+                && FCString::Strlen(Sheet.Name)>0 && FCString::Strlen(Sheet.FoeName)>0);
+            TestTrue(TEXT("Archetype weapon has an authored clip"),
+                static_cast<int32>(Sheet.Weapon)<static_cast<int32>(EAHWeaponKind::Count));
+        }
+        const float Speed[]={900.f,900.f,750.f,750.f,900.f,900.f,900.f};
+        const int32 RInit[]={1,0,0,0,0,0,0},RArmour[]={0,1,0,0,0,1,0},RHealth[]={0,0,1,0,0,0,0};
+        for(int32 I=0;I<AHRules::AncestryCount();++I)
+        {
+            const FAHAncestrySheet& Blood=AHRules::Ancestry(static_cast<EAHAncestry>(I));
+            TestEqual(TEXT("Ancestry movement"),Blood.Movement,Speed[I]);
+            TestEqual(TEXT("Ancestry initiative trait"),Blood.InitiativeBonus,RInit[I]);
+            TestEqual(TEXT("Ancestry armour trait"),Blood.ArmorBonus,RArmour[I]);
+            TestEqual(TEXT("Ancestry toughness"),Blood.HealthPerLevel,RHealth[I]);
+        }
+        TestTrue(TEXT("Only the halfling is lucky"),
+            AHRules::Ancestry(EAHAncestry::Halfling).bLucky
+            && !AHRules::Ancestry(EAHAncestry::Human).bLucky
+            && !AHRules::Ancestry(EAHAncestry::Elf).bLucky
+            && !AHRules::Ancestry(EAHAncestry::Dwarf).bLucky);
+        TestTrue(TEXT("Only full casters carry spell slots"),
+            AHRules::Class(EAHHeroClass::Cleric).bCaster
+            && AHRules::Class(EAHHeroClass::Wizard).bCaster
+            && !AHRules::Class(EAHHeroClass::Fighter).bCaster
+            && !AHRules::Class(EAHHeroClass::Barbarian).bCaster);
+    }
+    // ── Ancestry traits ──────────────────────────────────────────────────────
+    TestTrue(TEXT("Only the tiefling and dragonborn resist fire"),
+        AHRules::Ancestry(EAHAncestry::Tiefling).bFireResistant
+        && AHRules::Ancestry(EAHAncestry::Dragonborn).bFireResistant
+        && !AHRules::Ancestry(EAHAncestry::Human).bFireResistant);
+    TestTrue(TEXT("Only the half-orc refuses to fall"),
+        AHRules::Ancestry(EAHAncestry::HalfOrc).bRelentless
+        && !AHRules::Ancestry(EAHAncestry::Dwarf).bRelentless);
+    TestTrue(TEXT("Only the dragonborn breathes"),
+        AHRules::Ancestry(EAHAncestry::Dragonborn).bBreathWeapon
+        && !AHRules::Ancestry(EAHAncestry::Tiefling).bBreathWeapon);
+
+    {
+        auto* Infernal=Spawn(40000);
+        if(TestNotNull(TEXT("Tiefling fixture"),Infernal))
+        {
+            Infernal->ChooseAncestry(EAHAncestry::Tiefling);
+            Infernal->ChooseClass(EAHHeroClass::Fighter);
+            const int32 Full=Infernal->Health;
+            Infernal->ReceiveHit(8,EAHDamageType::Fire);
+            TestEqual(TEXT("Fire is halved for a tiefling"),Infernal->Health,Full-4);
+            Infernal->Health=Full;
+            Infernal->ReceiveHit(8,EAHDamageType::Physical);
+            TestEqual(TEXT("Steel is not halved for a tiefling"),Infernal->Health,Full-8);
+        }
+
+        auto* Orc=Spawn(44000);
+        if(TestNotNull(TEXT("Half-orc fixture"),Orc))
+        {
+            Orc->ChooseAncestry(EAHAncestry::HalfOrc);
+            Orc->ChooseClass(EAHHeroClass::Fighter);
+            TestEqual(TEXT("A heavier build hits harder"),Orc->DamageModifier,
+                AHRules::Class(EAHHeroClass::Fighter).DamageModifier+1);
+            Orc->ReceiveHit(500,EAHDamageType::Physical);
+            TestTrue(TEXT("Relentless endurance refuses the first drop"),Orc->IsAlive() && Orc->Health==1);
+            TestFalse(TEXT("Refusing to fall does not mark the character downed"),Orc->bDowned);
+            Orc->ReceiveHit(500,EAHDamageType::Physical);
+            TestTrue(TEXT("The second drop goes through"),Orc->bDowned);
+            Orc->Rest();
+            TestFalse(TEXT("A rest restores the refusal"),Orc->bRelentlessUsed);
+        }
+
+        auto* Drake=Spawn(48000);
+        auto* Ahead=Spawn(48300);   // 300 cm in front, inside the 450 cm cone
+        auto* Behind=Spawn(47550);  // 450 cm behind, so the one in front is strictly nearest
+        if(TestNotNull(TEXT("Dragonborn fixture"),Drake)
+           && TestNotNull(TEXT("Cone target"),Ahead) && TestNotNull(TEXT("Rear target"),Behind))
+        {
+            Drake->ChooseAncestry(EAHAncestry::Dragonborn);
+            Drake->ChooseClass(EAHHeroClass::Fighter);
+            Ahead->bEnemy=true;  Ahead->Health=Ahead->MaxHealth=60;
+            Behind->bEnemy=true; Behind->Health=Behind->MaxHealth=60;
+            TestFalse(TEXT("The breath needs an active turn"),Drake->CanUseRacialAbility());
+            Drake->StartTurn();
+            TestTrue(TEXT("The breath is ready on a fresh turn"),Drake->CanUseRacialAbility());
+            Drake->UseRacialAbility();
+            TestTrue(TEXT("The breath burns a target in the cone"),Ahead->Health<60);
+            TestEqual(TEXT("The breath spares a target behind the dragonborn"),Behind->Health,60);
+            TestFalse(TEXT("The breath spends the action"),Drake->Turn.bAction);
+            Drake->StartTurn();
+            TestFalse(TEXT("The breath is once per rest, not per turn"),Drake->CanUseRacialAbility());
+            Drake->Rest();
+            Drake->StartTurn();
+            TestTrue(TEXT("A rest restores the breath"),Drake->CanUseRacialAbility());
+        }
+    }
     GEngine->DestroyWorldContext(World); World->DestroyWorld(false); return true;
 }
 #endif

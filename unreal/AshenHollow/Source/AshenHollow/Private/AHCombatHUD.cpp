@@ -31,26 +31,8 @@ namespace AHUI
     const FLinearColor Teal  (.15f,.62f,.55f,1.f);
     const FLinearColor Purple(.52f,.22f,.72f,1.f);
 
-    FName AbilityIcon(EAHHeroClass C)
-    {
-        switch(C)
-        {
-        case EAHHeroClass::Barbarian: return TEXT("Rage");
-        case EAHHeroClass::Wizard:    return TEXT("Missiles");
-        case EAHHeroClass::Cleric:    return TEXT("Heal");
-        default:                      return TEXT("SecondWind");
-        }
-    }
-    FLinearColor ClassColor(EAHHeroClass C)
-    {
-        switch(C)
-        {
-        case EAHHeroClass::Barbarian: return Red;
-        case EAHHeroClass::Wizard:    return Purple;
-        case EAHHeroClass::Cleric:    return Teal;
-        default:                      return Amber;
-        }
-    }
+    FName AbilityIcon(EAHHeroClass C)  { return FName(AHRules::Class(C).Icon); }
+    FLinearColor ClassColor(EAHHeroClass C) { return AHRules::Class(C).Colour; }
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -152,6 +134,7 @@ void AAHCombatHUD::Icon(FName Type,float X,float Y,FLinearColor Color)
     else if(Type==TEXT("Missiles")) { for(int I=-1;I<=1;++I){const float D=I*12.f;L(-18,D+8,9,D-5);L(9,D-5,2,D-6);L(9,D-5,5,D+2);} }
     else if(Type==TEXT("SecondWind")) { L(0,18,-17,0);L(-17,0,-13,-12);L(-13,-12,-5,-14);L(-5,-14,0,-8);L(0,-8,5,-14);L(5,-14,13,-12);L(13,-12,17,0);L(17,0,0,18);L(-10,1,-4,1);L(-4,1,0,-5);L(0,-5,4,6);L(4,6,7,1);L(7,1,12,1); }
     else if(Type==TEXT("Dash"))  { L(-17,-14,-3,0);L(-3,0,-17,14);L(0,-14,14,0);L(14,0,0,14); }
+    else if(Type==TEXT("Breath")) { L(-16,-10,10,-18);L(-16,10,10,18);L(-16,-10,-16,10);L(2,-12,8,-6);L(2,12,8,6);L(6,-2,12,0);L(6,2,12,0); }
     // Disengage: breaking away from a threat line
     else if(Type==TEXT("Disengage")) { L(-15,-16,-15,16);L(-9,-10,1,0);L(1,0,-9,10);L(3,-10,13,0);L(13,0,3,10); }
     // Shield (dodge status)
@@ -519,6 +502,8 @@ void AAHCombatHUD::DrawHUD()
             Label(FString::Printf(TEXT("Espacos I: %d/%d II: %d/%d | circulo: %d"),Hero->ClassCharges,Hero->MaxSpellSlots(1),Hero->SpellSlots2,Hero->MaxSpellSlots(2),Hero->SelectedSpellLevel),35,220,.75f,AHUI::Text);
         if(Hero->Level>=2) Button(TEXT("Feature"),TEXT(""),Hero->ProgressionAbilityName(),35,250,Ready,.65f);
         if(Hero->MaxSpellSlots(2)>0) Button(TEXT("Slot"),TEXT(""),TEXT("CIRCULO"),125,250,Ready,.65f);
+        if(!Hero->RacialAbilityName().IsEmpty())
+            Button(TEXT("Breath"),TEXT("T"),Hero->RacialAbilityName(),35,336,Hero->CanUseRacialAbility(),.65f);
         if(Hero->GuardTurns>0) Label(FString::Printf(TEXT("Escudo +2 CA: %d turnos"),Hero->GuardTurns),35,340,.75f,AHUI::Gold);
     }
 
@@ -548,58 +533,103 @@ void AAHCombatHUD::DrawHUD()
     // ═══════════════════════════════════════════════════════════════════════
     if(!Hero->bCharacterReady)
     {
+        // The cards used to be a fixed row of four at X=225+I*288. Twelve
+        // archetypes or seven ancestries would have drawn straight off the
+        // right edge, so the layout is derived from the table size instead.
+        struct FGrid
+        {
+            int32 Cols=1, Rows=1, Total=1;
+            float W=268.f, H=336.f, StepX=288.f, StepY=356.f, TopY=268.f, Unit=1.f;
+            FVector2D At(int32 Index) const
+            {
+                const int32 Row=Index/Cols, Col=Index%Cols;
+                const int32 InRow=FMath::Min(Cols,Total-Row*Cols);
+                const float RowWidth=InRow*StepX-(StepX-W);
+                return FVector2D(800.f-RowWidth*.5f+Col*StepX, TopY+Row*StepY);
+            }
+            float Bottom() const { return TopY+Rows*StepY-(StepY-H); }
+        };
+        auto Layout=[](int32 Total,float AreaW,float AreaH,float TopY,float BaseW,float BaseH)
+        {
+            const float Gap=20.f;
+            FGrid G; G.Total=FMath::Max(Total,1);
+            G.Cols=G.Total<=8?FMath::Min(G.Total,4):6;
+            G.Rows=FMath::DivideAndRoundUp(G.Total,G.Cols);
+            G.W=FMath::Min(BaseW,(AreaW-Gap*(G.Cols-1))/G.Cols);
+            G.H=FMath::Min(BaseH,(AreaH-Gap*(G.Rows-1))/G.Rows);
+            G.StepX=G.W+Gap; G.StepY=G.H+Gap; G.TopY=TopY;
+            G.Unit=G.W/BaseW;                     // scales text and inner offsets
+            return G;
+        };
+
         if(!Hero->bAncestrySelected)
         {
             Panel(200,140,1200,600,true);
             Label(TEXT("A S H E N   H O L L O W"),800,160,1.8f,AHUI::Bright,true,true);
             Label(TEXT("1 / 2  ·  ESCOLHA SUA ANCESTRALIDADE"),800,210,1.f,AHUI::Gold,true);
-            Label(TEXT("Tracos iniciais do prototipo · modelos compartilhados"),800,245,.82f,AHUI::Dim,true);
-            for(int32 I=0;I<4;++I)
+            Label(TEXT("Traços iniciais do protótipo · modelos compartilhados"),800,245,.82f,AHUI::Dim,true);
+            const int32 Total=AHRules::AncestryCount();
+            const FGrid G=Layout(Total,1170.f,400.f,300.f,268.f,270.f);
+            for(int32 I=0;I<Total;++I)
             {
-                const float X=225+I*288; const auto Race=static_cast<EAHAncestry>(I);
+                const FVector2D P=G.At(I);
+                const auto Race=static_cast<EAHAncestry>(I);
+                const FAHAncestrySheet& Blood=AHRules::Ancestry(Race);
                 const FName Name(*FString::Printf(TEXT("Race%d"),I));
-                Panel(X,300,268,270,HoveredBox==Name);
-                Label(AAHCharacter::AncestryName(Race),X+134,345,1.15f,AHUI::Bright,true,true);
-                const TCHAR* Passive[]={TEXT("+1 iniciativa"),TEXT("+1 classe de armadura"),TEXT("+1 ponto de vida"),TEXT("Sorte: rerrola 1 uma vez")};
-                Label(Passive[I],X+134,408,.80f,AHUI::Text,true);
-                Label(I<2?TEXT("Movimento: 9 m"):TEXT("Movimento: 7,5 m"),X+134,442,.82f,AHUI::Dim,true);
-                Label(TEXT("ESCOLHER"),X+134,514,1.f,AHUI::Gold,true);
-                AddHitBox(FVector2D(OffsetX+X*Scale,OffsetY+300*Scale),FVector2D(268*Scale,270*Scale),Name,true,2);
+                Panel(P.X,P.Y,G.W,G.H,HoveredBox==Name);
+                const float Mid=P.X+G.W*.5f;
+                Label(AAHCharacter::AncestryName(Race),Mid,P.Y+G.H*.167f,1.15f*G.Unit,AHUI::Bright,true,true);
+                Label(Blood.SelectionPassive,Mid,P.Y+G.H*.4f,.80f*G.Unit,AHUI::Text,true);
+                const float Metres=Blood.Movement/100.f;
+                Label(FMath::IsNearlyEqual(Metres,FMath::RoundToFloat(Metres))
+                        ? FString::Printf(TEXT("Movimento: %.0f m"),Metres)
+                        : FString::Printf(TEXT("Movimento: %.0f,%.0f m"),FMath::FloorToFloat(Metres),(Metres-FMath::FloorToFloat(Metres))*10.f),
+                      Mid,P.Y+G.H*.526f,.82f*G.Unit,AHUI::Dim,true);
+                Label(TEXT("ESCOLHER"),Mid,P.Y+G.H*.793f,1.f*G.Unit,AHUI::Gold,true);
+                AddHitBox(FVector2D(OffsetX+P.X*Scale,OffsetY+P.Y*Scale),FVector2D(G.W*Scale,G.H*Scale),Name,true,2);
             }
-            Label(TEXT("Depois, escolha uma das quatro classes."),800,650,.85f,AHUI::Dim,true);
+            Label(FString::Printf(TEXT("Depois, escolha uma das %d classes."),AHRules::ClassCount()),
+                  800,FMath::Min(G.Bottom()+24.f,712.f),.85f,AHUI::Dim,true);
             return;
         }
+
         Panel(200,140,1200,600,true);
         Label(TEXT("A S H E N   H O L L O W"),800,160,1.8f,AHUI::Bright,true,true);
         Label(TEXT("2 / 2  ·  ESCOLHA SUA CLASSE"),800,198,1.f,AHUI::Gold,true);
         Label(AAHCharacter::AncestryName(Hero->Ancestry)+TEXT("  ·  ")+AAHCharacter::AncestryTrait(Hero->Ancestry),800,230,.80f,AHUI::Dim,true);
-        const TCHAR* Stats[]  ={TEXT("12 PV · CA 16 · +5 ataque"),TEXT("14 PV · CA 14 · +5 ataque"),TEXT("10 PV · CA 18 · +4 ataque"),TEXT("8 PV · CA 12 · +2 ataque")};
-        const TCHAR* Skills[] ={TEXT("SEGUNDO FÔLEGO"),TEXT("FÚRIA"),TEXT("CURAR FERIMENTOS"),TEXT("MÍSSEIS MÁGICOS")};
-        const TCHAR* Details[]={TEXT("Bônus: cura 1d10+1"),TEXT("Bônus: +2 dano físico"),TEXT("Ação: cura 1d8+3"),TEXT("Ação: 3 dardos de força")};
-        const TCHAR* Passive[]={TEXT("Armadura pesada + marcial"),TEXT("Resistência física em fúria"),TEXT("Armadura, escudo e magia"),TEXT("Magia sem teste de ataque")};
-        for(int32 I=0;I<4;++I)
+        const FAHAncestrySheet& Blood=AHRules::Ancestry(Hero->Ancestry);
+        const int32 Total=AHRules::ClassCount();
+        const FGrid G=Layout(Total,1170.f,388.f,268.f,268.f,336.f);
+        for(int32 I=0;I<Total;++I)
         {
-            const float X=225+I*288; const FName Name(*FString::Printf(TEXT("Class%d"),I));
+            const FVector2D P=G.At(I);
+            const FAHClassSheet& Sheet=AHRules::Class(static_cast<EAHHeroClass>(I));
+            const FName Name(*FString::Printf(TEXT("Class%d"),I));
             const bool Hover=HoveredBox==Name;
-            Panel(X,268,268,336,Hover);
-            if(Hover) DrawRect(FLinearColor(.22f,.14f,.05f,.15f),OffsetX+(X+2)*Scale,OffsetY+270*Scale,264*Scale,332*Scale);
-            const FLinearColor CC=AHUI::ClassColor(static_cast<EAHHeroClass>(I));
-            DrawRect(CC,OffsetX+(X+1)*Scale,OffsetY+268*Scale,266*Scale,4*Scale);
-            Icon(AHUI::AbilityIcon(static_cast<EAHHeroClass>(I)),X+134,330,AHUI::Bright);
-            Label(AAHCharacter::ClassName(static_cast<EAHHeroClass>(I)),X+134,382,1.25f,AHUI::Bright,true,true);
-            const int32 HP[]={12,14,10,8}, AC[]={16,14,18,12};
-            Label(FString::Printf(TEXT("%d PV · CA %d"),HP[I]+(Hero->Ancestry==EAHAncestry::Dwarf?1:0),AC[I]+(Hero->Ancestry==EAHAncestry::Elf?1:0)),X+134,410,.82f,AHUI::Text,true);
-            DrawLine(OffsetX+(X+20)*Scale,OffsetY+428*Scale,OffsetX+(X+248)*Scale,OffsetY+428*Scale,AHUI::Copper,.8f*Scale);
-            Label(Skills[I],X+134,438,.88f,CC,true);
-            Label(Details[I],X+134,464,.78f,AHUI::Text,true);
-            Label(Passive[I],X+134,490,.72f,AHUI::Dim,true);
-            DrawRect(FLinearColor(.18f,.10f,.03f,.85f),OffsetX+(X+34)*Scale,OffsetY+552*Scale,200*Scale,34*Scale);
-            DrawLine(OffsetX+(X+34)*Scale,OffsetY+552*Scale,OffsetX+(X+234)*Scale,OffsetY+552*Scale,CC,.9f*Scale);
-            Label(TEXT("JOGAR"),X+134,558,1.f,AHUI::Bright,true);
-            AddHitBox(FVector2D(OffsetX+X*Scale,OffsetY+268*Scale),FVector2D(268*Scale,336*Scale),Name,true,2);
+            const float Mid=P.X+G.W*.5f;
+            Panel(P.X,P.Y,G.W,G.H,Hover);
+            if(Hover) DrawRect(FLinearColor(.22f,.14f,.05f,.15f),OffsetX+(P.X+2)*Scale,OffsetY+(P.Y+2)*Scale,(G.W-4)*Scale,(G.H-4)*Scale);
+            const FLinearColor CC=Sheet.Colour;
+            DrawRect(CC,OffsetX+(P.X+1)*Scale,OffsetY+P.Y*Scale,(G.W-2)*Scale,4*Scale);
+            Icon(FName(Sheet.Icon),Mid,P.Y+G.H*.185f,AHUI::Bright);
+            Label(Sheet.Name,Mid,P.Y+G.H*.339f,1.25f*G.Unit,AHUI::Bright,true,true);
+            Label(FString::Printf(TEXT("%d PV · CA %d"),Sheet.MaxHealth+Blood.HealthPerLevel,Sheet.ArmorClass+Blood.ArmorBonus),
+                  Mid,P.Y+G.H*.423f,.82f*G.Unit,AHUI::Text,true);
+            DrawLine(OffsetX+(P.X+G.W*.075f)*Scale,OffsetY+(P.Y+G.H*.476f)*Scale,
+                     OffsetX+(P.X+G.W*.925f)*Scale,OffsetY+(P.Y+G.H*.476f)*Scale,AHUI::Copper,.8f*Scale);
+            Label(Sheet.SelectionAbility,Mid,P.Y+G.H*.506f,.88f*G.Unit,CC,true);
+            Label(Sheet.SelectionDetail,Mid,P.Y+G.H*.583f,.78f*G.Unit,AHUI::Text,true);
+            Label(Sheet.SelectionPassive,Mid,P.Y+G.H*.66f,.72f*G.Unit,AHUI::Dim,true);
+            if(Sheet.RangedRange>0)
+                Label(FString::Printf(TEXT("Alcance %.0f m"),Sheet.RangedRange/100.f),Mid,P.Y+G.H*.73f,.68f*G.Unit,AHUI::Teal,true);
+            DrawRect(FLinearColor(.18f,.10f,.03f,.85f),OffsetX+(P.X+G.W*.127f)*Scale,OffsetY+(P.Y+G.H*.845f)*Scale,G.W*.746f*Scale,G.H*.101f*Scale);
+            DrawLine(OffsetX+(P.X+G.W*.127f)*Scale,OffsetY+(P.Y+G.H*.845f)*Scale,
+                     OffsetX+(P.X+G.W*.873f)*Scale,OffsetY+(P.Y+G.H*.845f)*Scale,CC,.9f*Scale);
+            Label(TEXT("JOGAR"),Mid,P.Y+G.H*.863f,1.f*G.Unit,AHUI::Bright,true);
+            AddHitBox(FVector2D(OffsetX+P.X*Scale,OffsetY+P.Y*Scale),FVector2D(G.W*Scale,G.H*Scale),Name,true,2);
         }
-        Label(TEXT("VOLTAR: ANCESTRALIDADE"),800,650,.88f,AHUI::Gold,true);
-        AddHitBox(FVector2D(OffsetX+600*Scale,OffsetY+634*Scale),FVector2D(400*Scale,50*Scale),TEXT("BackAncestry"),true,2);
+        Label(TEXT("VOLTAR: ANCESTRALIDADE"),800,FMath::Min(G.Bottom()+24.f,712.f),.88f,AHUI::Gold,true);
+        AddHitBox(FVector2D(OffsetX+600*Scale,OffsetY+FMath::Min(G.Bottom()+8.f,696.f)*Scale),FVector2D(400*Scale,44*Scale),TEXT("BackAncestry"),true,2);
         return;
     }
 
@@ -612,6 +642,9 @@ void AAHCombatHUD::DrawHUD()
     const FLinearColor FPSCol=SmoothedFrameMs<20.f?AHUI::Green:SmoothedFrameMs<33.f?AHUI::Amber:AHUI::Red;
     Label(PC->PerformanceLabel,1405,26,.78f,AHUI::Dim,true);
     Label(FString::Printf(TEXT("%.0f FPS"),1000.f/FMath::Max(SmoothedFrameMs,.1f)),1405,45,.82f,FPSCol,true);
+    // Compile stamp of this file. Cheapest possible answer to "did my build land?".
+    static const FString BuildStamp=FString(ANSI_TO_TCHAR(__DATE__))+TEXT(" ")+FString(ANSI_TO_TCHAR(__TIME__));
+    Label(BuildStamp,1405,64,.60f,AHUI::Dim,true);
 
     // ── Title ────────────────────────────────────────────────────────────────
     Label(TEXT("ASHEN  HOLLOW"),32,27,1.1f,AHUI::Bright,false,true);
@@ -758,7 +791,16 @@ void AAHCombatHUD::DrawHUD()
 
     // ── Tooltip ──────────────────────────────────────────────────────────────
     FString Tooltip=Hero->Feedback;
-    if(HoveredBox==TEXT("Attack"))  Tooltip=FString::Printf(TEXT("Ataque · 1 ação · +%d p/ acertar · 1d%d+%d de dano"),Hero->AttackBonus,Hero->DamageSides,Hero->DamageModifier+(Hero->bRaging?2:0));
+    if(HoveredBox==TEXT("Attack"))
+    {
+        const FAHClassSheet& MySheet=AHRules::Class(Hero->HeroClass);
+        Tooltip=Hero->HasRangedAttack()
+            ? FString::Printf(TEXT("%s · 1 ação · +%d p/ acertar · 1d%d · alcance %.0f m%s"),
+                MySheet.RangedName,Hero->AttackBonus,MySheet.RangedSides,MySheet.RangedRange/100.f,
+                Hero->IsThreatenedInMelee()?TEXT(" · DESVANTAGEM: inimigo em corpo a corpo"):TEXT(""))
+            : FString::Printf(TEXT("Ataque · 1 ação · +%d p/ acertar · 1d%d+%d de dano"),
+                Hero->AttackBonus,Hero->DamageSides,Hero->DamageModifier+(Hero->bRaging?2:0));
+    }
     if(HoveredBox==TEXT("Dodge"))   Tooltip=TEXT("Esquiva · 1 ação · desvantagem nos ataques recebidos até seu próximo turno");
     if(HoveredBox==TEXT("Heal"))    Tooltip=Hero->ClassAbilityDescription();
     if(HoveredBox==TEXT("Dash"))    Tooltip=FString::Printf(TEXT("Disparada · 1 acao · +%.1f m neste turno"),Hero->BaseMovement/100.f);

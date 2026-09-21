@@ -5,6 +5,7 @@
 #include "GameFramework/Character.h"
 #include "AHDiceRules.h"
 #include "AHTurnBudget.h"
+#include "AHClassData.h"
 #include "AHCharacter.generated.h"
 
 class UAbilitySystemComponent;
@@ -15,8 +16,6 @@ class UAnimInstance;
 class UNiagaraSystem;
 class AAHMagicVisual;
 class UAHEquipmentComponent;
-enum class EAHHeroClass : uint8 { Fighter, Barbarian, Cleric, Wizard };
-enum class EAHAncestry : uint8 { Human, Elf, Dwarf, Halfling };
 
 /** Shared character for the turn-based SRD combat encounter. */
 UCLASS(Blueprintable)
@@ -165,7 +164,17 @@ public:
     bool TryOpportunityAttack(AAHCharacter* Mover, bool bConfirmed=false);
     void CheckArcana();
     bool TryAttack(AAHCharacter* Target);
-    void ReceiveHit(int32 Damage, bool bPhysical = true);
+
+    // ── Ranged attacks ────────────────────────────────────────────────────────
+    /** True when this archetype can shoot; see FAHClassSheet::RangedRange. */
+    bool HasRangedAttack() const { return AHRules::Class(HeroClass).RangedRange > 0; }
+    /** Range in centimetres, 0 for a melee-only archetype. */
+    float RangedReach() const { return static_cast<float>(AHRules::Class(HeroClass).RangedRange); }
+    /** A hostile within melee reach: shooting from here is at disadvantage (SRD 5.1). */
+    bool IsThreatenedInMelee() const;
+    /** Spends the action on a shot. Resolves on the animation notify like a melee swing. */
+    bool TryRangedAttack(AAHCharacter* Target);
+    void ReceiveHit(int32 Damage, EAHDamageType Type = EAHDamageType::Physical);
     void BecomeEnemy();
 
     /**
@@ -184,6 +193,19 @@ public:
     void ResolveImpact();
 
     bool bSecondWindUsed = false;
+    /** Half-orc: the one refusal to fall has been spent since the last rest. */
+    bool bRelentlessUsed = false;
+    /** Dragonborn: the breath has been spent since the last rest. */
+    bool bBreathUsed = false;
+
+    // ── Ancestry ability ──────────────────────────────────────────────────────
+    /** Empty when this ancestry has no active ability. */
+    FString RacialAbilityName() const;
+    bool CanUseRacialAbility() const;
+    void UseRacialAbility();
+
+    /** Rerolls a natural 1. Foes do not benefit, as before the data tables. */
+    bool IsLucky() const { return !bEnemy && AHRules::Ancestry(Ancestry).bLucky; }
 
 private:
     FRandomStream Dice;
@@ -195,6 +217,8 @@ private:
     int32 RageTurns = 0;
     bool bAttackedSinceTurnEnd = false, bDamagedSinceTurnEnd = false;
     int32 PendingSpellDamage = 0;
+    /** >0 while a shot is in flight; also the distance the target may drift to. */
+    float PendingRange = 0.f;
 
     /**
      * Absolute time for the impact fallback timer.
@@ -212,6 +236,9 @@ private:
      * Matches the 190 cm reach used by TryAttack, with a small tolerance.
      */
     static constexpr float ThreatReach = 200.f;
+
+    /** Reach of the draconic breath, in centimetres. */
+    static constexpr float BreathReach = 450.f;
 
     /** A wounded foe breaks away from melee once per encounter. */
     bool  bHasRetreated = false;
