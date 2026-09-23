@@ -11,11 +11,12 @@ class ASHENHOLLOW_API AAHMagicVisual : public AActor
     GENERATED_BODY()
 public:
     AAHMagicVisual();
-    void Initialize(const FVector& Origin, AActor* Target, float TravelSeconds);
+    void Initialize(const FVector& Origin, AActor* Target, float TravelSeconds, int32 Count=3);
     virtual void Tick(float DeltaSeconds) override;
 private:
     UPROPERTY() TArray<TObjectPtr<UStaticMeshComponent>> Darts;
     UPROPERTY() TWeakObjectPtr<AActor> Destination;
     FVector Start;
+    int32 HeadCount=3;
     float Age=0.f, Duration=.4f;
 };

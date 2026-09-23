@@ -229,9 +229,9 @@ void AAHCombatHUD::DrawChargeOrbs(const AAHCharacter* Hero,float X,float Y)
     case EAHHeroClass::Barbarian:
         Total=2; Remaining=Hero->ClassCharges; break;
     case EAHHeroClass::Cleric:
-        Total=2; Remaining=Hero->ClassCharges; break;
+        Total=Hero->MaxSpellSlots(1); Remaining=Hero->ClassCharges; break;
     case EAHHeroClass::Wizard:
-        Total=3; Remaining=Hero->ClassCharges; break;
+        Total=Hero->MaxSpellSlots(1); Remaining=Hero->ClassCharges; break;
     }
     const float Spacing=13.f;
     const float StartX=X-(Total-1)*Spacing*.5f;
@@ -495,15 +495,54 @@ void AAHCombatHUD::DrawHUD()
         Button(TEXT("ReactNo"),TEXT("N"),TEXT("PASSAR"),825,410,true);
         return;
     }
+    if(Hero->bCharacterReady && (Hero->bPreparingSpells || PC->bSpellbookOpen))
+    {
+        Panel(230,90,1140,740,true);
+        Label(AAHCharacter::ClassName(Hero->HeroClass)+TEXT(" / MAGIAS"),800,118,1.7f,AHUI::Gold,true);
+        Label(Hero->bPreparingSpells?TEXT("Escolha seu repertorio. Truques disponiveis nao ocupam preparacao."):TEXT("Selecione uma magia preparada. E conjura no alvo sob o cursor ou mais proximo."),800,157,.85f,AHUI::Text,true);
+        Label(FString::Printf(TEXT("Preparadas: %d / %d | Espacos I: %d | II: %d | Circulo escolhido: %d"),Hero->PreparedSpells.Num(),Hero->PreparedLimit(),Hero->ClassCharges,Hero->SpellSlots2,Hero->SelectedSpellLevel),800,187,.85f,AHUI::Gold,true);
+        int32 Row=0;
+        for(int32 I=0;I<AHSpells::Count();++I)
+        {
+            const auto& S=AHSpells::Get(static_cast<EAHSpell>(I)); if(!AHSpells::ForClass(S.Id,Hero->HeroClass)) continue;
+            const float Y=226+Row++*55.f;
+            const bool Available=Hero->IsSpellAvailable(S.Id),Prepared=S.Rank==0 || Hero->PreparedSpells.Contains(S.Id);
+            const FName Name(*FString::Printf(TEXT("Spell_%d"),I));
+            Panel(260,Y,1080,50,Available && (HoveredBox==Name || Hero->SelectedSpell==S.Id));
+            Label(Available?(Prepared?TEXT("[+] "):TEXT("[ ] ")):TEXT("[NV 3]"),274,Y+8,.75f,Prepared?AHUI::Gold:AHUI::Dim);
+            Label(S.Name,355,Y+6,.88f,Available?AHUI::Text:AHUI::Dim);
+            Label(S.Description,355,Y+28,.68f,Available?AHUI::Text:AHUI::Dim);
+            if(Available) AddHitBox(FVector2D(OffsetX+260*Scale,OffsetY+Y*Scale),FVector2D(1080*Scale,50*Scale),Name,true,10);
+        }
+        Label(Hero->Feedback,800,681,.75f,AHUI::Text,true);
+        Label(TEXT("Buffs e curas: pessoais nesta arena. Magias de bonus limitam outras magias no turno."),800,703,.73f,AHUI::Dim,true);
+        Button(TEXT("ReadySpells"),TEXT(""),Hero->bPreparingSpells?TEXT("PRONTO"):TEXT("VOLTAR"),755,731,true);
+        if(Hero->MaxSpellSlots(2)>0) Button(TEXT("Slot"),TEXT("I / II"),TEXT("CIRCULO"),860,731,true,.65f);
+        return;
+    }
     if(Hero->bCharacterReady)
     {
         Label(FString::Printf(TEXT("NIVEL %d | XP %d / 2700"),Hero->Level,Hero->Experience),35,195,.85f,AHUI::Gold);
         if(Hero->MaxSpellSlots(1)>0)
             Label(FString::Printf(TEXT("Espacos I: %d/%d II: %d/%d | circulo: %d"),Hero->ClassCharges,Hero->MaxSpellSlots(1),Hero->SpellSlots2,Hero->MaxSpellSlots(2),Hero->SelectedSpellLevel),35,220,.75f,AHUI::Text);
-        if(Hero->Level>=2) Button(TEXT("Feature"),TEXT(""),Hero->ProgressionAbilityName(),35,250,Ready,.65f);
-        if(Hero->MaxSpellSlots(2)>0) Button(TEXT("Slot"),TEXT(""),TEXT("CIRCULO"),125,250,Ready,.65f);
+        if(AHRules::Class(Hero->HeroClass).bCaster) Button(TEXT("Spells"),TEXT("K"),TEXT("MAGIAS"),215,250,true,.65f);
+        if(Hero->Level>=2 && Hero->HeroClass!=EAHHeroClass::Cleric && Hero->HeroClass!=EAHHeroClass::Wizard) Button(TEXT("Feature"),TEXT(""),Hero->ProgressionAbilityName(),35,250,Ready,.65f);
+        if(Hero->MaxSpellSlots(2)>0) Button(TEXT("Slot"),TEXT(""),TEXT("CIRCULO"),315,250,Ready,.65f);
+        if(Hero->HeroClass==EAHHeroClass::Sorcerer)
+        {
+            Label(FString::Printf(TEXT("Feiticaria: %d / %d | Potencializar: %s"),Hero->SorceryPoints,Hero->Level>=2?Hero->Level:0,Hero->bEmpowerNext?TEXT("SIM"):TEXT("NAO")),35,435,.7f,AHUI::Gold);
+            if(Hero->Level>=3) Button(TEXT("Empower"),TEXT("1 PF"),TEXT("POTENCIA"),125,250,Ready,.65f);
+        }
+        if(Hero->HeroClass==EAHHeroClass::Paladin)
+        {
+            Button(TEXT("Utility"),FString::FromInt(Hero->LayOnHands),TEXT("CURAR"),125,250,Ready);
+            Label(Hero->bSmiteArmed?TEXT("Punicao armada: espaco I no acerto"):TEXT("Punicao desativada"),35,435,.7f,AHUI::Gold);
+        }
+        if(Hero->HeroClass==EAHHeroClass::Rogue && Hero->Level>=3) Button(TEXT("Aim"),TEXT("BONUS"),TEXT("MIRA"),125,250,Ready);
+        if(Hero->Goodberries>0) Button(TEXT("Berry"),FString::FromInt(Hero->Goodberries),TEXT("FRUTO"),405,250,Ready);
         if(!Hero->RacialAbilityName().IsEmpty())
             Button(TEXT("Breath"),TEXT("T"),Hero->RacialAbilityName(),35,336,Hero->CanUseRacialAbility(),.65f);
+        if(Hero->MaxSpellSlots(1)>0) Label(Hero->ClassAbilityName(),35,465,.75f,AHUI::Gold);
         if(Hero->GuardTurns>0) Label(FString::Printf(TEXT("Escudo +2 CA: %d turnos"),Hero->GuardTurns),35,340,.75f,AHUI::Gold);
     }
 
@@ -773,7 +812,7 @@ void AAHCombatHUD::DrawHUD()
     Button(TEXT("Attack"),   TEXT("Q"),  TEXT("ATAQUE"),     588,745,Ready&&Hero->Turn.bAction);
     Button(TEXT("Dodge"),    TEXT("Spc"),TEXT("ESQUIVA"),    678,745,Ready&&Hero->Turn.bAction);
     Button(TEXT("Disengage"),TEXT("X"),  TEXT("DESENGAJAR"), 768,745,Ready&&Hero->Turn.bAction&&!Hero->bDisengaging,.62f);
-    Button(TEXT("Heal"),     TEXT("E"),  Hero->ClassAbilityName(),858,745,Hero->CanUseClassAbility());
+    Button(TEXT("Heal"),     TEXT("E"),  Hero->MaxSpellSlots(1)>0?TEXT("CONJURAR"):Hero->ClassAbilityName(),858,745,Hero->CanUseClassAbility());
     Button(TEXT("Dash"),     TEXT("R"),  TEXT("DISPARADA"),  948,745,Ready&&Hero->Turn.bAction);
 
     // ── End Turn ─────────────────────────────────────────────────────────────

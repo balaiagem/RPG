@@ -21,6 +21,8 @@ public:
     virtual void BeginPlay() override;
     virtual void PlayerTick(float DeltaTime) override;
     void CombatCommand(FName Command);
+    bool bSpellbookOpen=false;
+    void ToggleSpellbook();
     void EndTurn();
     void Dash();
     bool RequestMoveToLocation(const FVector& Location);

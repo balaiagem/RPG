@@ -27,7 +27,7 @@ void AAHGameMode::Tick(float DeltaSeconds)
 {
     Super::Tick(DeltaSeconds);
     auto* Hero = Cast<AAHCharacter>(UGameplayStatics::GetPlayerPawn(this,0));
-    if (!bStarted && Hero && Hero->bCharacterReady && Order.Num()==1)
+    if (!bStarted && Hero && Hero->bCharacterReady && !Hero->bPreparingSpells && Order.Num()==1)
     {
         Order.Add(Hero);
         FRandomStream Dice; Dice.GenerateNewSeed();
@@ -72,6 +72,7 @@ bool AAHGameMode::EndTurn(AAHCharacter* Requester)
         if(Next && (Next->IsAlive() || Next->IsDowned()) && (!Next->bEnemy || HasLivingHero)) { Found=true; break; }
     }
     if(!Found) { bFinished=true; return true; }
+    for(auto& Actor:Order) if(Actor) Actor->bSneakUsed=false;
     ActiveCharacter()->StartTurn();
     TurnStarted=GetWorld()->GetTimeSeconds();
     return true;
@@ -87,7 +88,7 @@ bool AAHGameMode::NextEncounter()
     if(!Enemy) return false;
     for(auto& Actor:Order) if(Actor && Actor->bEnemy) Actor->Destroy();
     Enemy->BecomeEnemy(); Enemy->MaxHealth+=(Hero->Level-1)*5; Enemy->Health=Enemy->MaxHealth;
-    Hero->Rest(); Hero->SetActorLocation(FVector(0,-600,110),false,nullptr,ETeleportType::TeleportPhysics);
+    Hero->Rest(); Hero->bPreparingSpells=Hero->MaxSpellSlots(1)>0; Hero->SetActorLocation(FVector(0,-600,110),false,nullptr,ETeleportType::TeleportPhysics);
     Order.Reset(); Order.Add(Enemy); ActiveIndex=0; Round=1; bStarted=false; bFinished=false;
     return true;
 }

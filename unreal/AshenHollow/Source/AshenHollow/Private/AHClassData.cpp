@@ -41,6 +41,26 @@ namespace
             EAHWeaponKind::Staff, TEXT("Missiles"), FLinearColor(.52f,.22f,.72f,1.f),
             1800, 10, 0, TEXT("Raio de Fogo")
         },
+        {
+            TEXT("FEITICEIRO"),TEXT("PIROMANTE"),TEXT("CONJURAR"),TEXT("Magias conhecidas e pontos de feiticaria"),TEXT("CONVERTER"),
+            TEXT("MAGIA INATA"),TEXT("Nivel 2: pontos de feiticaria"),TEXT("Nivel 3: magia potencializada"),
+            8,12,2,6,0,2,2,6,true, EAHWeaponKind::Staff,TEXT("Missiles"),FLinearColor(.9f,.3f,.45f,1),1800,10,0,TEXT("Raio de Fogo")
+        },
+        {
+            TEXT("LADINO"),TEXT("ASSASSINO"),TEXT("ESCAPAR"),TEXT("Nivel 2: desengajar com acao bonus"),TEXT("CORRER"),
+            TEXT("ATAQUE FURTIVO"),TEXT("+1d6; +2d6 no nivel 3"),TEXT("Vantagem ou aliado junto ao alvo"),
+            10,14,5,8,3,3,0,7,false, EAHWeaponKind::Sword,TEXT("Attack"),FLinearColor(.45f,.65f,.6f,1),2400,6,3,TEXT("Arco curto")
+        },
+        {
+            TEXT("PALADINO"),TEXT("CRUZADO"),TEXT("CONJURAR"),TEXT("Cura pelas maos; magias a partir do nivel 2"),TEXT("PUNIR"),
+            TEXT("IMPOSICAO DAS MAOS"),TEXT("Reserva de cura: 5 x nivel"),TEXT("Nivel 2: punicao divina opcional"),
+            12,18,5,8,3,0,0,8,true, EAHWeaponKind::Sword,TEXT("Heal"),FLinearColor(.95f,.8f,.3f,1),0,0,0,nullptr
+        },
+        {
+            TEXT("PATRULHEIRO"),TEXT("CACADOR"),TEXT("CONJURAR"),TEXT("Arco e marca do cacador a partir do nivel 2"),TEXT("MARCAR"),
+            TEXT("ARQUEIRO"),TEXT("Arco longo: 1d8+3"),TEXT("Nivel 2: marca +1d6 por acerto"),
+            12,15,5,6,3,3,0,8,true, EAHWeaponKind::Sword,TEXT("Attack"),FLinearColor(.25f,.7f,.3f,1),3600,8,3,TEXT("Arco longo")
+        },
     };
 
     // Order must match EAHAncestry.

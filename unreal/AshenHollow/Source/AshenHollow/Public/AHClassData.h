@@ -12,14 +12,14 @@
  * concept instead, so a new archetype is a row and the compiler keeps count.
  */
 
-enum class EAHHeroClass : uint8 { Fighter, Barbarian, Cleric, Wizard, Count };
+enum class EAHHeroClass : uint8 { Fighter, Barbarian, Cleric, Wizard, Sorcerer, Rogue, Paladin, Ranger, Count };
 enum class EAHAncestry  : uint8 { Human, Elf, Dwarf, Halfling, HalfOrc, Tiefling, Dragonborn, Count };
 
 /**
  * Damage types. This started life as a bool called bPhysical, which could say
  * "rage halves this" and nothing else. Fire resistance needs a real type.
  */
-enum class EAHDamageType : uint8 { Physical, Fire, Force };
+enum class EAHDamageType : uint8 { Physical, Fire, Force, Cold, Radiant, Necrotic, Thunder };
 
 /** Which authored attack clip and weapon model an archetype uses. */
 enum class EAHWeaponKind : uint8 { Sword, Axe, Mace, Staff, Count };

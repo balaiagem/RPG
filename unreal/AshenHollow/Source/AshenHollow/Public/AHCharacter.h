@@ -6,6 +6,7 @@
 #include "AHDiceRules.h"
 #include "AHTurnBudget.h"
 #include "AHClassData.h"
+#include "AHSpellData.h"
 #include "AHCharacter.generated.h"
 
 class UAbilitySystemComponent;
@@ -79,6 +80,32 @@ public:
     void UseProgressionAbility();
     FString ProgressionAbilityName() const;
     void Rest();
+    int32 SorceryPoints=0, LayOnHands=5, Goodberries=0;
+    bool bEmpowerNext=false, bSmiteArmed=false, bSneakUsed=false, bSteadyAim=false, bAimMovementLocked=false;
+    float MovementSpentThisTurn=0;
+    TWeakObjectPtr<AAHCharacter> MarkedTarget;
+    int32 MarkTurns=0;
+    void UseClassUtility();
+    void ToggleEmpower();
+    void SteadyAim();
+    void EatGoodberry();
+    int32 AddWeaponRiders(AAHCharacter* Target, FAHDiceOutcome& Roll, bool bRanged);
+    int32 SpellDamageDie(int32 Sides, int32& Rerolls);
+    bool bPreparingSpells=false;
+    TArray<EAHSpell> PreparedSpells;
+    EAHSpell SelectedSpell=EAHSpell::CureWounds;
+    bool IsSpellAvailable(EAHSpell Id) const;
+    bool TogglePreparedSpell(EAHSpell Id);
+    bool SelectSpell(EAHSpell Id);
+    bool CastSpell(EAHSpell Id, AAHCharacter* Target=nullptr);
+    void InitializeSpellbook();
+    int32 PreparedLimit() const { return HeroClass==EAHHeroClass::Sorcerer?Level+1:HeroClass==EAHHeroClass::Ranger?FMath::Min(Level,3):HeroClass==EAHHeroClass::Paladin?2+Level/2:Level+3; }
+    int32 AidBonus=0, MageArmorBonus=0, FrostTurns=0, BlessTurns=0;
+    TWeakObjectPtr<AAHCharacter> GuidingSource;
+    int32 GuidingExpiresTurn=0, TurnsStarted=0;
+    bool HasGuidingMark() const;
+    bool bBonusSpellCast=false, bLeveledActionSpellCast=false;
+
 
     // ── Death saves (D&D 5e downed state) ────────────────────────────────────
     /** True when HP == 0 but death saves haven't been exhausted yet. */
@@ -174,7 +201,7 @@ public:
     bool IsThreatenedInMelee() const;
     /** Spends the action on a shot. Resolves on the animation notify like a melee swing. */
     bool TryRangedAttack(AAHCharacter* Target);
-    void ReceiveHit(int32 Damage, EAHDamageType Type = EAHDamageType::Physical);
+    void ReceiveHit(int32 Damage, EAHDamageType Type = EAHDamageType::Physical, int32 RadiantBonus=0);
     void BecomeEnemy();
 
     /**
@@ -217,6 +244,8 @@ private:
     int32 RageTurns = 0;
     bool bAttackedSinceTurnEnd = false, bDamagedSinceTurnEnd = false;
     int32 PendingSpellDamage = 0;
+    int32 PendingSpellId=-1, PendingSpellRank=1, PendingEmpowerRerolls=0;
+    void ResolveSpellImpact();
     /** >0 while a shot is in flight; also the distance the target may drift to. */
     float PendingRange = 0.f;
 

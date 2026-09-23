@@ -56,8 +56,9 @@ public:
                 if(!Test->TestNotNull(TEXT("Next class character spawns"),Next)) return true;
                 auto* Old=Hero.Get(); PC->Possess(Next); Hero=Next; if(Old) Old->Destroy();
             }
-            PC->CombatCommand(FName(*FString::Printf(TEXT("Race%d"),ClassIndex)));
+            PC->CombatCommand(FName(*FString::Printf(TEXT("Race%d"),ClassIndex%AHRules::AncestryCount())));
             PC->CombatCommand(FName(*FString::Printf(TEXT("Class%d"),ClassIndex)));
+            PC->CombatCommand(TEXT("ReadySpells"));
             Test->TestEqual(TEXT("Class selection routes through controller"),static_cast<int32>(Hero->HeroClass),ClassIndex);
             auto* Mode=Cast<AAHGameMode>(World->GetAuthGameMode());
             AAHCharacter* Enemy=nullptr;
@@ -79,6 +80,18 @@ public:
                 PC->CombatCommand(TEXT("Dash"));
                 Test->TestFalse(TEXT("Controller rejects dash outside player turn"),Hero->bDashing);
                 Test->TestTrue(TEXT("Enemy turn hands control to player"),Mode->EndTurn(Enemy));
+            }
+            if(ClassIndex==0)
+            {
+                Test->TestTrue(TEXT("Opportunity offers player a decision"),Hero->TryOpportunityAttack(Enemy));
+                Test->TestTrue(TEXT("Reaction prompt pauses world"),PC->IsReactionPending() && World->IsPaused());
+                Test->TestTrue(TEXT("Offering preserves reaction"),Hero->Turn.bReaction);
+                PC->CombatCommand(TEXT("ReactNo"));
+                Test->TestTrue(TEXT("Decline resumes and preserves reaction"),!PC->IsReactionPending() && !World->IsPaused() && Hero->Turn.bReaction);
+                Test->TestTrue(TEXT("Opportunity can be accepted later"),Hero->TryOpportunityAttack(Enemy));
+                PC->CombatCommand(TEXT("ReactYes"));
+                Test->TestTrue(TEXT("Accept spends reaction and resumes"),!PC->IsReactionPending() && !World->IsPaused() && !Hero->Turn.bReaction);
+                Test->TestFalse(TEXT("Reaction cannot be spent twice"),Hero->TryOpportunityAttack(Enemy));
             }
             Test->TestTrue(TEXT("Player has control before movement"),Hero->CanAct());
             Test->TestEqual(TEXT("New player turn uses ancestry movement"),Hero->Turn.Movement,Hero->BaseMovement);
@@ -127,8 +140,8 @@ public:
             Test->TestTrue(TEXT("Movement spends the turn budget"),Hero->Turn.Movement<800);
             PC->StopMovement();
             if(ClassIndex==0 || ClassIndex==2) Hero->Health-=3;
-            Test->TestTrue(TEXT("Class ability is available"),Hero->CanUseClassAbility());
-            PC->CombatCommand(TEXT("Heal"));
+            if(ClassIndex<4) Test->TestTrue(TEXT("Class ability is available"),Hero->CanUseClassAbility());
+            PC->CombatCommand(ClassIndex<4?TEXT("Heal"):TEXT("Dodge"));
             Test->TestTrue(TEXT("Class ability starts its animation"),Hero->IsBusy());
             ReturnStart=Hero->GetActorLocation();
             Test->TestTrue(TEXT("Movement click during animation is buffered"),PC->RequestMoveToLocation(Start-FVector(0,0,90)));
@@ -157,7 +170,7 @@ public:
             Phase=5; Requested=FPlatformTime::Seconds(); return false;
         }
         PC->StopMovement(); Phase=0; Requested=0;
-        if(++ClassIndex<4) return false;
+        if(++ClassIndex<AHRules::ClassCount()) return false;
         auto* Mode=Cast<AAHGameMode>(World->GetAuthGameMode());
         AAHCharacter* Enemy=nullptr;
         for(TActorIterator<AAHCharacter> It(World);It;++It) if(It->bEnemy) { Enemy=*It; break; }

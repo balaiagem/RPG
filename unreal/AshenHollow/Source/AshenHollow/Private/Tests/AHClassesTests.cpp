@@ -87,9 +87,9 @@ bool FAHClassesTest::RunTest(const FString& Parameters)
     TestEqual(TEXT("Every archetype has a row"),AHRules::ClassCount(),static_cast<int32>(EAHHeroClass::Count));
     TestEqual(TEXT("Every ancestry has a row"),AHRules::AncestryCount(),static_cast<int32>(EAHAncestry::Count));
     {
-        const int32 HP[]={12,14,10,8},AC[]={16,14,18,12},Atk[]={5,5,4,2};
-        const int32 Sides[]={8,12,6,6},Mod[]={3,3,2,0},Init[]={1,2,0,2};
-        const int32 Uses[]={1,2,2,2},Growth[]={8,9,7,6};
+        const int32 HP[]={12,14,10,8,8,10,12,12},AC[]={16,14,18,12,12,14,18,15},Atk[]={5,5,4,2,2,5,5,5};
+        const int32 Sides[]={8,12,6,6,6,8,8,6},Mod[]={3,3,2,0,0,3,3,3},Init[]={1,2,0,2,2,3,0,3};
+        const int32 Uses[]={1,2,2,2,2,0,0,0},Growth[]={8,9,7,6,6,7,8,8};
         for(int32 I=0;I<AHRules::ClassCount();++I)
         {
             const FAHClassSheet& Sheet=AHRules::Class(static_cast<EAHHeroClass>(I));

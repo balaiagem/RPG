@@ -5,6 +5,7 @@
 int32 AAHCharacter::MaxSpellSlots(int32 Rank) const
 {
     if(!AHRules::Class(HeroClass).bCaster) return 0;
+    if(HeroClass==EAHHeroClass::Paladin || HeroClass==EAHHeroClass::Ranger) return Rank==1 && Level>=2?(Level==2?2:3):0;
     const int32 First[]={0,2,3,4,4},Second[]={0,0,0,2,3};
     return Rank==1?First[FMath::Clamp(Level,1,4)]:Rank==2?Second[FMath::Clamp(Level,1,4)]:0;
 }
@@ -20,11 +21,14 @@ void AAHCharacter::GainExperience(int32 Amount)
     {
         const int32 Old1=MaxSpellSlots(1),Old2=MaxSpellSlots(2);
         ++Level;
+        SorceryPoints=HeroClass==EAHHeroClass::Sorcerer?Level:0;
+        LayOnHands+=5;
         const int32 HP=AHRules::Class(HeroClass).HitPointGrowth
                       +AHRules::Ancestry(Ancestry).HealthPerLevel;
         MaxHealth+=HP; if(IsAlive()) Health+=HP;
         if(MaxSpellSlots(1)>0) ClassCharges+=MaxSpellSlots(1)-Old1;
         SpellSlots2+=MaxSpellSlots(2)-Old2;
+        if(Old1==0 && MaxSpellSlots(1)>0) InitializeSpellbook();
         AddLog(FString::Printf(TEXT("Nivel %d!"),Level));
     }
 }
@@ -54,30 +58,34 @@ void AAHCharacter::UseProgressionAbility()
         if(!Turn.bAction || bReckless) return;
         bReckless=true; Feedback=TEXT("Ataque temerario: vantagem ao atacar e ser atacado ate seu proximo turno");
     }
-    else if(HeroClass==EAHHeroClass::Cleric)
+    else if(HeroClass==EAHHeroClass::Sorcerer)
     {
-        if(!Turn.bBonus || !HasSpellSlot() || GuardTurns>0) return;
-        Turn.SpendBonus(); SpendSpellSlot(); GuardTurns=10; ArmorClass+=2;
-        PlayGesture(GuardAnimation); Feedback=TEXT("Escudo da fe: +2 CA / concentracao");
+        if(!Turn.bBonus || SorceryPoints<2 || ClassCharges>=MaxSpellSlots(1)) { Feedback=TEXT("Converter: 2 pontos + bonus, espaco I abaixo do maximo"); return; }
+        Turn.SpendBonus(); SorceryPoints-=2; ++ClassCharges; Feedback=TEXT("Espaco I recuperado");
     }
-    else
+    else if(HeroClass==EAHHeroClass::Rogue)
     {
-        if(!Turn.bAction || !HasSpellSlot()) return;
-        Turn.SpendAction(); SpendSpellSlot();
-        TempHP=FMath::Max(TempHP,Dice.RandRange(1,4)+4+5*(SelectedSpellLevel-1));
-        PlayGesture(CastAnimation); Feedback=TEXT("Vida falsa: PV temporarios nao acumulam");
+        if(bAimMovementLocked || !Turn.SpendBonus()) return;
+        Turn.Movement+=FMath::Max(0.f,BaseMovement-(FrostTurns>0?300.f:0.f)); bDashing=true; Feedback=TEXT("Acao astuta: corrida com bonus");
     }
+    else if(HeroClass==EAHHeroClass::Paladin) { bSmiteArmed=!bSmiteArmed; Feedback=bSmiteArmed?TEXT("Punicao armada: gasta espaco no proximo acerto corpo a corpo"):TEXT("Punicao desativada"); }
+    else if(HeroClass==EAHHeroClass::Ranger) { SelectedSpell=EAHSpell::HuntersMark; UseClassAbility(); return; }
+    else { CastSpell(HeroClass==EAHHeroClass::Cleric?EAHSpell::ShieldOfFaith:EAHSpell::FalseLife); return; }
     AddLog(Feedback);
 }
 void AAHCharacter::Rest()
 {
     FinishTurn(); GetWorldTimerManager().ClearTimer(DeathSaveTimer);
     if(GuardTurns>0) ArmorClass-=2;
+    MaxHealth-=AidBonus; AidBonus=0; ArmorClass-=MageArmorBonus; MageArmorBonus=0;
+    FrostTurns=BlessTurns=0; GuidingSource.Reset(); PendingSpellId=-1; bBonusSpellCast=bLeveledActionSpellCast=false;
     GuardTurns=0; bReckless=false; bRaging=false; RageTurns=0; TempHP=0;
     bDowned=false; bStabilized=false; DeathSuccesses=DeathFailures=0;
     bSecondWindUsed=bActionSurgeUsed=false; bHasRetreated=false;
     bRelentlessUsed=false; bBreathUsed=false;
-    Health=MaxHealth; ClassCharges=MaxSpellSlots(1)>0?MaxSpellSlots(1):AHRules::Class(HeroClass).ClassCharges;
+    SorceryPoints=HeroClass==EAHHeroClass::Sorcerer && Level>=2?Level:0; LayOnHands=5*Level; Goodberries=0;
+    bEmpowerNext=bSmiteArmed=bSneakUsed=bSteadyAim=bAimMovementLocked=false; MovementSpentThisTurn=0; MarkedTarget.Reset(); MarkTurns=0;
+    Health=MaxHealth; ClassCharges=AHRules::Class(HeroClass).bCaster?MaxSpellSlots(1):AHRules::Class(HeroClass).ClassCharges;
     SpellSlots2=MaxSpellSlots(2); SelectedSpellLevel=1;
     AnimationEnds=ReactionEnds=0; bIsAttacking=false; PendingTarget=nullptr;
     InReachOf.Reset(); GetCharacterMovement()->SetMovementMode(MOVE_Walking);

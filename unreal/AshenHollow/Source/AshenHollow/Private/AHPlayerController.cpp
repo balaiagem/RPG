@@ -57,6 +57,7 @@ void AAHPlayerController::SetupInputComponent()
     };
     Bind(EKeys::Q, &AAHPlayerController::AttackNearest);
     Bind(EKeys::E, &AAHPlayerController::Heal);
+    Bind(EKeys::K, &AAHPlayerController::ToggleSpellbook);
     Bind(EKeys::C, &AAHPlayerController::Check);
     Bind(EKeys::Y, &AAHPlayerController::AcceptReaction);
     Bind(EKeys::N, &AAHPlayerController::DeclineReaction);
@@ -173,7 +174,20 @@ void AAHPlayerController::AttackNearest()
     UAIBlueprintHelperLibrary::SimpleMoveToActor(this, AttackTarget);
 }
 
-void AAHPlayerController::Heal() { if (auto* Hero = Cast<AAHCharacter>(GetPawn())) Hero->UseClassAbility(); }
+void AAHPlayerController::Heal()
+{
+    if(bSpellbookOpen || IsReactionPending()) return;
+    if(auto* Hero=Cast<AAHCharacter>(GetPawn()))
+    {
+        if(Hero->MaxSpellSlots(1)>0 && HoveredEnemy) Hero->CastSpell(Hero->SelectedSpell,HoveredEnemy);
+        else Hero->UseClassAbility();
+    }
+}
+void AAHPlayerController::ToggleSpellbook()
+{
+    auto* Hero=Cast<AAHCharacter>(GetPawn());
+    if(Hero && Hero->bCharacterReady && AHRules::Class(Hero->HeroClass).bCaster && !IsReactionPending()) bSpellbookOpen=!bSpellbookOpen;
+}
 void AAHPlayerController::BreathAction() { if (auto* Hero = Cast<AAHCharacter>(GetPawn())) Hero->UseRacialAbility(); }
 void AAHPlayerController::DisengageAction()
 {
@@ -221,9 +235,28 @@ void AAHPlayerController::CombatCommand(FName Command)
     if(Command==TEXT("ReactNo")) { ResolveReaction(false); return; }
     if(IsReactionPending()) return;
     auto* ProgressHero=Cast<AAHCharacter>(GetPawn());
+    if(Command==TEXT("Spells")) { ToggleSpellbook(); return; }
+    if(ProgressHero && Command==TEXT("ReadySpells"))
+    { ProgressHero->bPreparingSpells=false; bSpellbookOpen=false;
+      if(!ProgressHero->SelectSpell(ProgressHero->SelectedSpell)) ProgressHero->SelectSpell(ProgressHero->HeroClass==EAHHeroClass::Cleric?EAHSpell::SacredFlame:ProgressHero->HeroClass==EAHHeroClass::Paladin?EAHSpell::CureWounds:ProgressHero->HeroClass==EAHHeroClass::Ranger?EAHSpell::HuntersMark:EAHSpell::FireBolt);
+      return; }
+    if(ProgressHero && Command.ToString().StartsWith(TEXT("Spell_")))
+    {
+        const int32 Id=FCString::Atoi(*Command.ToString().Mid(6));
+        if(Id>=0 && Id<AHSpells::Count())
+        {
+            if(ProgressHero->bPreparingSpells) ProgressHero->TogglePreparedSpell(static_cast<EAHSpell>(Id));
+            else if(ProgressHero->SelectSpell(static_cast<EAHSpell>(Id))) bSpellbookOpen=false;
+        }
+        return;
+    }
     if(Command==TEXT("Next")) { if(auto* Mode=Cast<AAHGameMode>(GetWorld()->GetAuthGameMode())) Mode->NextEncounter(); return; }
     if(ProgressHero)
     {
+        if(Command==TEXT("Utility")) { ProgressHero->UseClassUtility(); return; }
+        if(Command==TEXT("Empower")) { ProgressHero->ToggleEmpower(); return; }
+        if(Command==TEXT("Aim")) { ProgressHero->SteadyAim(); return; }
+        if(Command==TEXT("Berry")) { ProgressHero->EatGoodberry(); return; }
         if(Command==TEXT("Feature")) { ProgressHero->UseProgressionAbility(); return; }
         if(Command==TEXT("Breath")) { ProgressHero->UseRacialAbility(); return; }
         if(Command==TEXT("Slot")) { ProgressHero->CycleSpellLevel(); return; }
@@ -243,7 +276,7 @@ void AAHPlayerController::CombatCommand(FName Command)
     if(Command.ToString().StartsWith(TEXT("Class")))
     {
         const int32 Index=FCString::Atoi(*Command.ToString().Right(1));
-        if(Index>=0 && Index<AHRules::ClassCount()) if(auto* Hero=Cast<AAHCharacter>(GetPawn())) Hero->ChooseClass(static_cast<EAHHeroClass>(Index));
+        if(Index>=0 && Index<AHRules::ClassCount()) if(auto* Hero=Cast<AAHCharacter>(GetPawn())) { Hero->ChooseClass(static_cast<EAHHeroClass>(Index)); Hero->bPreparingSpells=Hero->MaxSpellSlots(1)>0; }
         return;
     }
     if(Command==TEXT("Attack")) AttackNearest();
