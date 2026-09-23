@@ -492,8 +492,10 @@ bool AAHCharacter::TryOpportunityAttack(AAHCharacter* Mover, bool bConfirmed)
 
     if (Result.bSuccess)
     {
+        // A melee hit on an unconscious creature within reach is a critical (PHB 292).
+        if(Mover->bDowned && !Mover->bStabilized) Result.bCritical=true;
         const int32 Radiant=AddWeaponRiders(Mover,Result,false);
-        Mover->ReceiveHit(Result.Damage,EAHDamageType::Physical,Radiant);
+        Mover->ReceiveHit(Result.Damage,EAHDamageType::Physical,Radiant,Result.bCritical);
         Result.Damage = Mover->LastDamage;
     }
     else
@@ -784,8 +786,11 @@ void AAHCharacter::ResolveImpact()
 
     if (Result.bSuccess)
     {
+        // A melee hit on an unconscious creature within reach is a critical (PHB 292).
+        // A shot from range is not, so the auto-crit is gated on being in melee.
+        if(Target->bDowned && !Target->bStabilized && ShotRange<=0.f) Result.bCritical=true;
         const int32 Radiant=AddWeaponRiders(Target,Result,ShotRange>0.f);
-        Target->ReceiveHit(Result.Damage,EAHDamageType::Physical,Radiant);
+        Target->ReceiveHit(Result.Damage,EAHDamageType::Physical,Radiant,Result.bCritical);
         Result.Damage=Target->LastDamage;
         Viewer->LastRoll=Result;
     }
@@ -817,7 +822,7 @@ void AAHCharacter::ResolveImpact()
 
 // ── Other actions ─────────────────────────────────────────────────────────────
 
-void AAHCharacter::ReceiveHit(int32 Damage, EAHDamageType Type, int32 RadiantBonus)
+void AAHCharacter::ReceiveHit(int32 Damage, EAHDamageType Type, int32 RadiantBonus, bool bCriticalHit)
 {
     if ((!IsAlive() && !bDowned) || Damage+RadiantBonus <= 0) return;
     const FAHAncestrySheet& Blood = AHRules::Ancestry(Ancestry);
@@ -825,7 +830,7 @@ void AAHCharacter::ReceiveHit(int32 Damage, EAHDamageType Type, int32 RadiantBon
     if (Blood.bFireResistant && Type == EAHDamageType::Fire) Damage/=2;
     Damage+=RadiantBonus;
     if (Damage <= 0) return;
-    if((GuardTurns>0 || BlessTurns>0 || MarkTurns>0) && (Damage>=Health+TempHP || !UAHDiceRules::RollCheck(Dice,2+(BlessTurns>0?Dice.RandRange(1,4):0),FMath::Max(10,Damage/2),0,IsLucky()).bSuccess))
+    if((GuardTurns>0 || BlessTurns>0 || MarkTurns>0) && (Damage>=Health+TempHP || !UAHDiceRules::RollCheck(Dice,ConcentrationModifier()+(BlessTurns>0?Dice.RandRange(1,4):0),FMath::Max(10,Damage/2),0,IsLucky()).bSuccess))
     { if(GuardTurns>0) ArmorClass-=2; GuardTurns=BlessTurns=MarkTurns=0; MarkedTarget.Reset(); AddLog(TEXT("Concentracao encerrada")); }
     bDamagedSinceTurnEnd=true;
     LastDamageTime = GetWorld()->GetTimeSeconds();
@@ -851,6 +856,7 @@ void AAHCharacter::ReceiveHit(int32 Damage, EAHDamageType Type, int32 RadiantBon
 
     // ── Apply to real HP ──────────────────────────────────────────────────────
     LastDamage = FMath::Min(Health, Damage);
+    const int32 Overkill = Damage - LastDamage;   // damage left over after HP ran out
     Health     = FMath::Max(0, Health - Damage);
     ImpactText = FString::Printf(TEXT("-%d"), LastDamage);
     // Half-orc: one refusal to drop, per rest. Checked before the downed
@@ -884,6 +890,25 @@ void AAHCharacter::ReceiveHit(int32 Damage, EAHDamageType Type, int32 RadiantBon
         return;
     }
 
+    // ── Massive damage: leftover damage meeting your maximum kills outright ──
+    // PHB 197. No death saves, no stabilising.
+    if(Health<=0 && !bDowned && Overkill>=MaxHealth)
+    {
+        bDowned=false; bStabilized=false;
+        DeathSuccesses=0; DeathFailures=3;
+        bIsAttacking=false; AnimationEnds=0.f;
+        FinishTurn();
+        PendingTarget=nullptr; ImpactAt=-1.f; bImpactResolved=true;
+        if(IsValid(MagicVisual)) MagicVisual->Destroy(); MagicVisual=nullptr;
+        GetCharacterMovement()->DisableMovement();
+        GetCapsuleComponent()->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+        if(DeathAnimation) GetMesh()->PlayAnimation(DeathAnimation,false);
+        ImpactText=FString::Printf(TEXT("-%d  FATAL!"),LastDamage);
+        AddLog(TEXT("Dano massivo: morte instantanea, sem salvaguardas."));
+        Feedback=TEXT("Morto por dano massivo.");
+        return;
+    }
+
     // ── HP reached 0: transition to downed state (D&D death saves) ───────────
     if(!bDowned)
     {
@@ -905,8 +930,8 @@ void AAHCharacter::ReceiveHit(int32 Damage, EAHDamageType Type, int32 RadiantBon
     }
     else
     {
-        // Hit while already downed = extra failure
-        ++DeathFailures;
+        // Hit while already downed. A critical costs two failures (PHB 197).
+        DeathFailures += bCriticalHit ? 2 : 1;
         if(bStabilized) DeathSuccesses=0;
         bStabilized=false;
         AddLog(TEXT("Atingido enquanto nocauteado - falha adicional!"));
@@ -950,13 +975,47 @@ void AAHCharacter::Dash()
     Feedback = FString::Printf(TEXT("Disparada: +%.1f m de movimento"),BaseMovement/100.f);
 }
 
+int32 AAHCharacter::SpellSaveDC() const
+{
+    return 8 + UAHDiceRules::ProficiencyBonus(Level) + AHRules::Class(HeroClass).CastingModifier;
+}
+
+int32 AAHCharacter::SpellAttackBonus() const
+{
+    return UAHDiceRules::ProficiencyBonus(Level) + AHRules::Class(HeroClass).CastingModifier;
+}
+
+int32 AAHCharacter::ApplyHealing(int32 Amount)
+{
+    // Nothing brings back a character who already failed three saves or was
+    // killed outright by massive damage.
+    if (Amount<=0 || (DeathFailures>=3 && !bDowned)) return 0;
+
+    const bool bWasDowned = bDowned;
+    const int32 Healed = FMath::Min(Amount, MaxHealth-Health);
+    Health += Healed;
+
+    if (bWasDowned && Health>0)
+    {
+        // Any healing ends the dying state and wipes the tally (PHB 197).
+        bDowned=false; bStabilized=false;
+        DeathSuccesses=0; DeathFailures=0;
+        GetWorldTimerManager().ClearTimer(DeathSaveTimer);
+        GetCharacterMovement()->SetMovementMode(EMovementMode::MOVE_Walking);
+        GetCapsuleComponent()->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
+        GetMesh()->SetAnimationMode(EAnimationMode::AnimationBlueprint);
+        if (LocomotionClass) GetMesh()->SetAnimInstanceClass(LocomotionClass);
+        AddLog(TEXT("De pe novamente!"));
+    }
+    return Healed;
+}
+
 void AAHCharacter::SecondWind()
 {
     if(HeroClass!=EAHHeroClass::Fighter) return;
     if (!CanAct() || bSecondWindUsed || Health == MaxHealth || !Turn.SpendBonus()) return;
     bSecondWindUsed = true;
-    const int32 Healing = FMath::Min(MaxHealth - Health, Dice.RandRange(1, 10) + 1);
-    Health += Healing;
+    const int32 Healing = ApplyHealing(Dice.RandRange(1, 10) + Level);   // 1d10 + level
     PlayGesture(HealAnimation);
     AAHCombatBurst::Emit(GetWorld(),GetActorLocation()-FVector(0,0,45),EAHBurst::Heal);
     ImpactText = FString::Printf(TEXT("+%d PV"), Healing);

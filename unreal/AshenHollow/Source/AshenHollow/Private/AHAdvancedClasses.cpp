@@ -10,8 +10,9 @@ void AAHCharacter::UseClassUtility()
     if(HeroClass==EAHHeroClass::Paladin)
     {
         if(!Turn.bAction || LayOnHands<=0 || Health>=MaxHealth) return;
-        const int32 Heal=FMath::Min(LayOnHands,MaxHealth-Health);
-        Turn.SpendAction(); LayOnHands-=Heal; Health+=Heal;
+        Turn.SpendAction();
+        const int32 Heal=ApplyHealing(FMath::Min(LayOnHands,MaxHealth-Health));
+        LayOnHands-=Heal;
         PlayGesture(HealAnimation); AAHCombatBurst::Emit(GetWorld(),GetActorLocation(),EAHBurst::Heal);
         Feedback=FString::Printf(TEXT("Imposicao das maos: +%d PV / reserva %d"),Heal,LayOnHands);
     }
@@ -37,7 +38,7 @@ void AAHCharacter::SteadyAim()
 void AAHCharacter::EatGoodberry()
 {
     if(!CanAct() || Goodberries<=0 || Health>=MaxHealth || !Turn.SpendAction()) return;
-    --Goodberries; ++Health; PlayGesture(HealAnimation); Feedback=TEXT("Bom fruto: +1 PV");
+    --Goodberries; ApplyHealing(1); PlayGesture(HealAnimation); Feedback=TEXT("Bom fruto: +1 PV");
 }
 int32 AAHCharacter::SpellDamageDie(int32 Sides, int32& Rerolls)
 {

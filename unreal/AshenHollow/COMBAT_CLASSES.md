@@ -287,3 +287,46 @@ não em aço, a recusa de queda funcionando uma vez e não duas, o sopro queiman
 frente e poupando um atrás, e o descanso devolvendo ambos.
 
 Validação pendente: não compilado nem executado neste computador.
+
+## Auditoria de regras — 23/09/2026
+
+Revisão do projeto contra o SRD 5.1 depois da entrada de feiticeiro, ladino, paladino e
+patrulheiro. O que já estava correto e foi confirmado: concentração única por vez, com teste
+de CD igual ao maior valor entre 10 e metade do dano, encerrando ao cair a zero; vantagem e
+desvantagem agrupadas com `||`, de modo que fontes opostas se anulam em vez de somar;
+espaços de meio-conjurador em 2/3/3 a partir do nível 2; durações de Marca do Caçador,
+Escudo da Fé e Bênção corretas; ataque furtivo uma vez por turno de cada criatura; e a
+expiração do Raio Guia ao fim do turno seguinte do conjurador.
+
+Quatro divergências corrigidas:
+
+**Dano massivo não matava.** PHB 197: se o dano que sobra depois de zerar os pontos de vida
+iguala ou supera o máximo, a morte é imediata, sem salvaguardas. `ReceiveHit` agora calcula
+o excedente e aplica morte instantânea. Isso torna o jogo mais letal — era a diferença mais
+significativa em relação a 5e.
+
+**Cura não levantava um personagem caído.** `Health+=Amount` deixava `bDowned` ligado, e
+`StartTurn` manda qualquer um com `bDowned` rolar salvaguarda em vez de agir: o personagem
+ficava curado, vivo e permanentemente incapaz de jogar. Toda cura passa agora por
+`ApplyHealing`, que encerra o estado de morrendo e zera as contagens. O problema era latente
+porque só existe cura no próprio alvo, mas seria fatal ao introduzir grupo.
+
+**Segundo Fôlego estava preso no nível 1.** Curava `1d10+1`; a regra é 1d10 + nível de
+guerreiro. Regressão introduzida quando a progressão entrou.
+
+**Golpes em criatura inconsciente não eram críticos.** PHB 292: um acerto corpo a corpo a
+até 1,5 m é crítico automático, e um crítico custa duas falhas de salvaguarda em vez de uma.
+Ataques à distância não recebem o crítico automático. A IA continua não atacando heróis
+caídos, então na prática isso se aplica quando o jogador ataca um inimigo caído.
+
+**CD de magia e teste de concentração deixaram de ser fixos.** `ConSaveModifier` e
+`CastingModifier` entraram na ficha. A CD passou a ser 8 + proficiência + modificador de
+conjuração e o ataque mágico, proficiência + modificador. Para conjuradores plenos de nível
+1 o resultado continua 13 e +5, idêntico aos valores fixos anteriores; meio-conjuradores
+agora usam CD 12, que era o valor errado antes.
+
+Simplificações conscientes que permanecem: testes de resistência de área usam um modificador
+genérico em vez do atributo específico de cada magia, e não existe sistema de condições
+(caído, cego, amedrontado).
+
+Validação pendente: não compilado nem executado neste computador.

@@ -91,7 +91,7 @@ bool AAHCharacter::CastSpell(EAHSpell Id, AAHCharacter* Target)
     if(Id==EAHSpell::CureWounds || Id==EAHSpell::HealingWord)
     {
         int32 Amount=3; for(int32 I=0;I<Rank;++I) Amount+=Dice.RandRange(1,Id==EAHSpell::CureWounds?8:4);
-        Amount=FMath::Min(Amount,MaxHealth-Health); Health+=Amount;
+        Amount=ApplyHealing(Amount);
         ImpactText=FString::Printf(TEXT("+%d PV"),Amount); ImpactTextTime=GetWorld()->GetTimeSeconds(); bImpactHealing=true;
     }
     else if(Id==EAHSpell::ShieldOfFaith) { MarkTurns=0; MarkedTarget.Reset(); BlessTurns=0; GuardTurns=100; ArmorClass+=2; }
@@ -135,7 +135,7 @@ void AAHCharacter::ResolveSpellImpact()
             FHitResult Block; FCollisionQueryParams Q(SCENE_QUERY_STAT(SpellArea),false,this); Q.AddIgnoredActor(Victim);
             if(GetWorld()->LineTraceSingleByChannel(Block,GetActorLocation(),Victim->GetActorLocation(),ECC_Visibility,Q)) continue;
             const int32 Modifier=Id==EAHSpell::BurningHands?AHRules::Class(Victim->HeroClass).InitiativeBonus:2;
-            auto Save=UAHDiceRules::RollCheck(Dice,Modifier+(Victim->BlessTurns>0?Dice.RandRange(1,4):0),13,Id==EAHSpell::BurningHands && Victim->bDodging?1:0,Victim->IsLucky());
+            auto Save=UAHDiceRules::RollCheck(Dice,Modifier+(Victim->BlessTurns>0?Dice.RandRange(1,4):0),SpellSaveDC(),Id==EAHSpell::BurningHands && Victim->bDodging?1:0,Victim->IsLucky());
             Victim->ReceiveHit(Save.bSuccess?Damage/2:Damage,Id==EAHSpell::BurningHands?EAHDamageType::Fire:EAHDamageType::Thunder);
             TotalDamage+=Victim->LastDamage;
             if(Id==EAHSpell::Thunderwave && !Save.bSuccess && Victim->IsAlive())
@@ -152,7 +152,7 @@ void AAHCharacter::ResolveSpellImpact()
     {
         // Dexterity modifier is currently the archetype's initiative modifier,
         // excluding ancestry and feat bonuses.
-        auto Save=UAHDiceRules::RollCheck(Dice,AHRules::Class(Target->HeroClass).InitiativeBonus+(Target->BlessTurns>0?Dice.RandRange(1,4):0),13,Target->bDodging?1:0,Target->IsLucky());
+        auto Save=UAHDiceRules::RollCheck(Dice,AHRules::Class(Target->HeroClass).InitiativeBonus+(Target->BlessTurns>0?Dice.RandRange(1,4):0),SpellSaveDC(),Target->bDodging?1:0,Target->IsLucky());
         if(!Save.bSuccess) { TotalDamage=SpellDamageDie(8,Rerolls); Target->ReceiveHit(TotalDamage,EAHDamageType::Radiant); }
         LastRoll=Save; LastRoll.Damage=TotalDamage; LastRollLabel=TEXT("ALVO / SALVAGUARDA DES"); LastRollTime=GetWorld()->GetTimeSeconds();
     }
@@ -168,7 +168,7 @@ void AAHCharacter::ResolveSpellImpact()
             const bool Disadvantage=Target->bDodging || (Id!=EAHSpell::InflictWounds && bThreatened);
             const int32 Count=Id==EAHSpell::InflictWounds?2+Rank:Id==EAHSpell::GuidingBolt?3+Rank:Id==EAHSpell::ScorchingRay?2:1;
             const int32 Sides=(Id==EAHSpell::FireBolt || Id==EAHSpell::InflictWounds)?10:Id==EAHSpell::RayOfFrost?8:6;
-            auto Roll=UAHDiceRules::RollAttack(Dice,5+(BlessTurns>0?Dice.RandRange(1,4):0),Target->ArmorClass,0,Sides,0,(Advantage?1:0)-(Disadvantage?1:0),IsLucky());
+            auto Roll=UAHDiceRules::RollAttack(Dice,SpellAttackBonus()+(BlessTurns>0?Dice.RandRange(1,4):0),Target->ArmorClass,0,Sides,0,(Advantage?1:0)-(Disadvantage?1:0),IsLucky());
             if(Roll.bSuccess) for(int32 D=0;D<Count*(Roll.bCritical?2:1);++D) Roll.Damage+=SpellDamageDie(Sides,Rerolls);
             Target->GuidingSource.Reset();
             if(Roll.bSuccess)

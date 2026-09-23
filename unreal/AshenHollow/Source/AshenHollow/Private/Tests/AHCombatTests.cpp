@@ -232,6 +232,65 @@ bool FAHCombatTest::RunTest(const FString& Parameters)
             TestTrue(TEXT("A refused shot costs a melee archetype nothing"),Brawler->Turn.bAction);
         }
     }
+    // ── Death and healing rules (PHB 197) ────────────────────────────────────
+    {
+        auto* Doomed=World->SpawnActor<AAHCharacter>(FVector(20000,0,100),FRotator::ZeroRotator,Spawn);
+        if(TestNotNull(TEXT("Massive damage fixture"),Doomed))
+        {
+            Doomed->ChooseAncestry(EAHAncestry::Human);
+            Doomed->ChooseClass(EAHHeroClass::Fighter);
+            Doomed->ReceiveHit(Doomed->MaxHealth*3,EAHDamageType::Physical);
+            TestFalse(TEXT("Massive damage skips the dying state entirely"),Doomed->bDowned);
+            TestEqual(TEXT("Massive damage is instant death"),Doomed->DeathFailures,3);
+        }
+
+        auto* Bruised=World->SpawnActor<AAHCharacter>(FVector(21000,0,100),FRotator::ZeroRotator,Spawn);
+        if(TestNotNull(TEXT("Survivable drop fixture"),Bruised))
+        {
+            Bruised->ChooseAncestry(EAHAncestry::Human);
+            Bruised->ChooseClass(EAHHeroClass::Fighter);
+            Bruised->ReceiveHit(Bruised->MaxHealth,EAHDamageType::Physical);
+            TestTrue(TEXT("A drop to zero with no leftover damage still rolls saves"),Bruised->bDowned);
+            const int32 Restored=Bruised->ApplyHealing(4);
+            TestEqual(TEXT("Healing a dying character restores hit points"),Restored,4);
+            TestFalse(TEXT("Healing ends the dying state"),Bruised->bDowned);
+            TestEqual(TEXT("Healing wipes the death save tally"),Bruised->DeathFailures,0);
+            TestEqual(TEXT("A revived character holds the healed total"),Bruised->Health,4);
+        }
+
+        auto* Dying=World->SpawnActor<AAHCharacter>(FVector(22000,0,100),FRotator::ZeroRotator,Spawn);
+        if(TestNotNull(TEXT("Dying fixture"),Dying))
+        {
+            Dying->ChooseAncestry(EAHAncestry::Human);
+            Dying->ChooseClass(EAHHeroClass::Fighter);
+            Dying->ReceiveHit(Dying->MaxHealth,EAHDamageType::Physical);
+            Dying->ReceiveHit(1,EAHDamageType::Physical,0,false);
+            TestEqual(TEXT("An ordinary hit on a dying creature costs one failure"),Dying->DeathFailures,1);
+            Dying->ReceiveHit(1,EAHDamageType::Physical,0,true);
+            TestEqual(TEXT("A critical on a dying creature costs two"),Dying->DeathFailures,3);
+        }
+
+        auto* Veteran=World->SpawnActor<AAHCharacter>(FVector(23000,0,100),FRotator::ZeroRotator,Spawn);
+        if(TestNotNull(TEXT("Second wind fixture"),Veteran))
+        {
+            Veteran->ChooseAncestry(EAHAncestry::Human);
+            Veteran->ChooseClass(EAHHeroClass::Fighter);
+            Veteran->Level=4; Veteran->MaxHealth=40; Veteran->Health=1;
+            Veteran->StartTurn();
+            Veteran->SecondWind();
+            TestTrue(TEXT("Second wind heals 1d10 plus fighter level, not 1d10+1"),
+                Veteran->Health>=6 && Veteran->Health<=15);
+        }
+
+        // Spell maths now derive from the sheet instead of being hardcoded.
+        TestEqual(TEXT("A full caster's save DC is 8 + proficiency + casting"),
+            8+UAHDiceRules::ProficiencyBonus(1)+AHRules::Class(EAHHeroClass::Cleric).CastingModifier,13);
+        TestEqual(TEXT("A half caster's save DC is two lower at first level"),
+            8+UAHDiceRules::ProficiencyBonus(1)+AHRules::Class(EAHHeroClass::Paladin).CastingModifier,12);
+        TestTrue(TEXT("Martial archetypes have no casting modifier"),
+            AHRules::Class(EAHHeroClass::Fighter).CastingModifier==0
+            && AHRules::Class(EAHHeroClass::Rogue).CastingModifier==0);
+    }
     GEngine->DestroyWorldContext(World); World->DestroyWorld(false); return true;
 }
 #endif

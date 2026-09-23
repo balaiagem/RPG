@@ -201,7 +201,21 @@ public:
     bool IsThreatenedInMelee() const;
     /** Spends the action on a shot. Resolves on the animation notify like a melee swing. */
     bool TryRangedAttack(AAHCharacter* Target);
-    void ReceiveHit(int32 Damage, EAHDamageType Type = EAHDamageType::Physical, int32 RadiantBonus=0);
+    void ReceiveHit(int32 Damage, EAHDamageType Type = EAHDamageType::Physical, int32 RadiantBonus=0,
+                    bool bCriticalHit=false);
+
+    // ── Saves and healing ─────────────────────────────────────────────────────
+    /** Constitution modifier used for concentration saves. */
+    int32 ConcentrationModifier() const { return AHRules::Class(HeroClass).ConSaveModifier; }
+    /** 8 + proficiency + casting modifier (PHB spellcasting). */
+    int32 SpellSaveDC() const;
+    /** Proficiency + casting modifier. */
+    int32 SpellAttackBonus() const;
+    /**
+     * Single entry point for every source of healing. Any healing above 0 HP
+     * ends the downed state and clears death saves, as the rules require.
+     */
+    int32 ApplyHealing(int32 Amount);
     void BecomeEnemy();
 
     /**

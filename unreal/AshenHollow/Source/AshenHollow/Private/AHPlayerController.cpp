@@ -15,6 +15,7 @@
 #include "EngineUtils.h"
 #include "Kismet/GameplayStatics.h"
 #include "GameFramework/GameUserSettings.h"
+#include "HAL/IConsoleManager.h"
 
 AAHPlayerController::AAHPlayerController()
 {
@@ -206,7 +207,20 @@ void AAHPlayerController::ApplyPerformance()
         Settings->SetFrameRateLimit(PerformanceProfile==0?120.f:60.f);
         Settings->ApplyNonResolutionSettings();
     }
-    const TCHAR* Names[]={TEXT("DESEMPENHO / F6"),TEXT("EQUILIBRADO / F6"),TEXT("QUALIDADE / F6")};
+    // Lumen and virtual shadow maps ride the Quality profile only, so F6 is a
+    // real A/B on this machine instead of a guess about what a 6 GB laptop GPU
+    // can afford. DefaultEngine.ini still ships with them off.
+    const bool bRichLighting = PerformanceProfile >= 2;
+    auto SetCVar=[](const TCHAR* Name, int32 Value)
+    {
+        if(IConsoleVariable* Variable = IConsoleManager::Get().FindConsoleVariable(Name))
+            Variable->Set(Value, ECVF_SetByGameSetting);
+    };
+    SetCVar(TEXT("r.DynamicGlobalIlluminationMethod"), bRichLighting ? 1 : 0);
+    SetCVar(TEXT("r.ReflectionMethod"),                bRichLighting ? 1 : 2);
+    SetCVar(TEXT("r.Shadow.Virtual.Enable"),           bRichLighting ? 1 : 0);
+
+    const TCHAR* Names[]={TEXT("DESEMPENHO / F6"),TEXT("EQUILIBRADO / F6"),TEXT("QUALIDADE + LUMEN / F6")};
     PerformanceLabel=Names[PerformanceProfile];
 }
 void AAHPlayerController::Check()

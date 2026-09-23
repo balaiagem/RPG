@@ -54,6 +54,11 @@ struct FAHClassSheet
     int32 RangedSides;                 // damage die
     int32 RangedBonus;
     const TCHAR* RangedName;
+
+    // Saves. Concentration is a Constitution save; the spell DC and spell attack
+    // bonus both derive from the casting stat plus proficiency, so they scale.
+    int32 ConSaveModifier;
+    int32 CastingModifier;
 };
 
 struct FAHAncestrySheet
