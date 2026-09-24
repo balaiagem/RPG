@@ -78,7 +78,7 @@ if light:
     setp(light, 'light_color', unreal.Color(255, 244, 224, 255))
     setp(light, 'cast_shadows', True)
     setp(light, 'dynamic_shadow_distance_movable_light', 12000.0)
-    setp(light, 'light_shaft_occlusion', True)
+    setp(light, 'enable_light_shaft_occlusion', True)
     setp(light, 'occlusion_mask_darkness', 0.35)
 
 # ── Fill ─────────────────────────────────────────────────────────────────────
@@ -111,7 +111,7 @@ if fog_component:
     # Volumetric fog is what sells depth here, and it is also the single most
     # expensive thing in this script. It scales with sg.EffectsQuality, so the
     # Desempenho profile on F6 already turns it down.
-    setp(fog_component, 'volumetric_fog', True)
+    setp(fog_component, 'enable_volumetric_fog', True)
     setp(fog_component, 'volumetric_fog_scattering_distribution', 0.4)
     setp(fog_component, 'volumetric_fog_albedo', unreal.Color(220, 226, 240, 255))
     setp(fog_component, 'volumetric_fog_extinction_scale', 0.8)
@@ -129,9 +129,14 @@ def graded(name, value):
         setp(settings, name, value)
 
 # Locked exposure. Auto exposure is the main reason a stylized scene looks
-# washed out and inconsistent as the camera pans.
-graded('auto_exposure_method', unreal.AutoExposureMethod.AEM_MANUAL)
-graded('auto_exposure_bias', 10.6)
+# washed out and drifts as the camera pans.
+#
+# Pinning min == max is the safe way to lock it. Do NOT switch to AEM_MANUAL and
+# lean on auto_exposure_bias: that value is EV compensation, so a figure like 10
+# is about 1500x brightness and blows the frame to solid white.
+graded('auto_exposure_min_brightness', 1.0)
+graded('auto_exposure_max_brightness', 1.0)
+graded('auto_exposure_bias', 1.0)
 
 graded('bloom_intensity', 0.55)
 graded('bloom_threshold', 0.6)

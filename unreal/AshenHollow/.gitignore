@@ -6,3 +6,19 @@ Saved/
 *.sln
 *.suo
 *.VC.db
+
+# Conteudo de terceiros da Fab. Fica de fora do git de proposito: sao ~1,5 GB,
+# e o git ficaria pesado demais para servir de rede de seguranca. Para trazer de
+# volta: Unreal -> Window -> Fab -> My Library -> Add to Project.
+# Se sumirem, o jogo continua rodando: as armas voltam sozinhas para o desenho
+# de cubos e cilindros (veja a tabela de arte em AHEquipmentComponent.cpp).
+Content/Fantastic_Village_Pack/
+Content/FreeMeleeWeaps/
+Content/StylizedCharacter/
+Content/__ExternalActors__/Demo/
+Content/__ExternalActors__/FreeMeleeWeaps/
+Content/__ExternalActors__/ThirdPerson/
+Content/__ExternalObjects__/FreeMeleeWeaps/
+
+# Pasta de descarte: arquivos que eu movi para fora do caminho e voce pode apagar.
+_to_delete/

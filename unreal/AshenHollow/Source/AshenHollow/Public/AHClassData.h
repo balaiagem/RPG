@@ -21,8 +21,13 @@ enum class EAHAncestry  : uint8 { Human, Elf, Dwarf, Halfling, HalfOrc, Tiefling
  */
 enum class EAHDamageType : uint8 { Physical, Fire, Force, Cold, Radiant, Necrotic, Thunder };
 
-/** Which authored attack clip and weapon model an archetype uses. */
-enum class EAHWeaponKind : uint8 { Sword, Axe, Mace, Staff, Count };
+/**
+ * Which authored attack clip and weapon model an archetype uses.
+ * This enum indexes AAHCharacter::WeaponAnimations and the weapon art table in
+ * AHEquipmentComponent.cpp, and both are guarded to its Count -- adding a kind
+ * here without a row there is a compile error, not a crash at the call site.
+ */
+enum class EAHWeaponKind : uint8 { Sword, Axe, Mace, Staff, Bow, Count };
 
 struct FAHClassSheet
 {

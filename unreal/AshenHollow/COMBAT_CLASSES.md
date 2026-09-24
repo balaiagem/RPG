@@ -330,3 +330,28 @@ genérico em vez do atributo específico de cada magia, e não existe sistema de
 (caído, cego, amedrontado).
 
 Validação pendente: não compilado nem executado neste computador.
+
+## Armas por classe conferidas contra a ficha (2026-09-24)
+
+`EAHWeaponKind` ganhou `Bow`. A arma de cada arquetipo passou a seguir o que a
+ficha dele diz, e nao o que estava escrito antes:
+
+- **Ladino** e **Patrulheiro** tinham `Sword`, mas os dois tem ataque a distancia na
+  ficha (arco curto 24 m 1d6+3 e arco longo 36 m 1d8+3) e o roteamento de ataque
+  tenta o tiro **antes** do corpo a corpo. Ou seja, na pratica eles atiram quase
+  sempre e carregavam uma espada que raramente usavam. Agora usam `Bow`.
+  Efeito colateral bom: o escudo so aparece para `Sword` e `Mace`, entao o ladino
+  deixou de andar com escudo, o que estava errado desde o inicio.
+- **Barbaro** rola 1d12, que e um machado grande, entao a linha `Axe` aponta para o
+  modelo de duas maos e nao para o de uma.
+- **Mago** e **Feiticeiro** tambem tem alcance na ficha, mas o deles e Raio de Fogo,
+  uma magia. Continuam de cajado, como deve ser.
+- **Guerreiro**, **Paladino** (espada e escudo) e **Clerigo** (maca e escudo) ja
+  estavam certos.
+
+Risco fechado no caminho: `PlayAttack` indexava `WeaponAnimations` direto pelo
+`EAHWeaponKind`, sem checar limite. Acrescentar `Bow` teria estourado o array na
+primeira pancada corpo a corpo de um arqueiro. Agora os dois leitores passam por
+`AAHCharacter::WeaponClip()`, que checa o indice, e a lista de clipes tem uma
+entrada por tipo. Atirar toca o clipe de conjuracao; a pancada com o arco pega
+emprestado o golpe de cajado, que e o movimento de duas maos mais proximo que temos.

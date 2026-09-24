@@ -2,46 +2,13 @@ Using bundled DotNet SDK version: 10.0 win-x64
 Running UnrealBuildTool: dotnet "..\..\Engine\Binaries\DotNET\UnrealBuildTool\UnrealBuildTool.dll" AshenHollowEditor Win64 Development "-Project=C:\Users\lucas\Documents\ChatGPT\RPG\unreal\AshenHollow\AshenHollow.uproject" -WaitMutex -MaxParallelActions=4
 Log file: C:\Users\lucas\AppData\Local\UnrealBuildTool\Log.txt
 Executing up to 4 actions based on MaxProcessorCount override
-Creating makefile for AshenHollowEditor (command line arguments changed)
 UbaServer - Listening on 0.0.0.0:1345
-UHT compiled-in object format Default
-Building AshenHollowEditor...
-===== Toolchain Information =====
-Using ISPC compiler (C:\Program Files\Epic Games\UE_5.8\Engine\Source\ThirdParty\Intel\ISPC\bin\Windows\ispc.exe)
-  Intel(r) Implicit SPMD Program Compiler (Intel(r) ISPC), 1.24.0 (build commit  @ 20250404, LLVM 18.1.2) 
-Using Visual Studio 14.44.35228 toolchain (C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\VC\Tools\MSVC\14.44.35207) and Windows 10.0.22621.0 SDK (C:\Program Files (x86)\Windows Kits\10).
-[Adaptive Build] Excluded from AshenHollow unity file: AHAdvancedClasses.cpp, AHAnimInstance.cpp, AHCharacter.cpp, AHClassData.cpp, AHCombatBurst.cpp, AHCombatHUD.cpp, AHDiceRules.cpp, AHEquipmentComponent.cpp, AHGameMode.cpp, AHMagicVisual.cpp, AHNotify_MeleeImpact.cpp, AHPlayerController.cpp, AHProgression.cpp, AHSpellcasting.cpp, AHSpellData.cpp, AshenHollow.cpp, AHAdvancedClassesTests.cpp, AHClassesTests.cpp, AHCombatTests.cpp, AHDiceRulesTests.cpp, AHNavigationTests.cpp, AHProgressionTests.cpp, AHSpellTests.cpp
-=================================
-Using Unreal Build Accelerator local executor to run 22 action(s)
-  CPU 8 physical cores, 12 logical cores
-  Memory 15.64 GB physical, 21.59 GB/31.44 GB committed
-  UBA Storage capacity 40 GB
-[1/22] Compile [x64] AHAdvancedClasses.cpp
-[2/22] Compile [x64] AHAdvancedClassesTests.cpp
-[3/22] Compile [x64] AHAnimInstance.cpp
-[4/22] Compile [x64] AHCharacter.cpp
-[5/22] Compile [x64] AHClassData.cpp
-[6/22] Compile [x64] AHClassesTests.cpp
-[7/22] Compile [x64] AHCombatHUD.cpp
-[8/22] Compile [x64] AHCombatTests.cpp
-[9/22] Compile [x64] AHEquipmentComponent.cpp
-[10/22] Compile [x64] AHGameMode.cpp
-[11/22] Compile [x64] AHNavigationTests.cpp
-[12/22] Compile [x64] AHNotify_MeleeImpact.cpp
-[13/22] Compile [x64] AHPlayerController.cpp
-[14/22] Compile [x64] AHProgression.cpp
-[15/22] Compile [x64] AHProgressionTests.cpp
-[16/22] Compile [x64] AHSpellData.cpp
-[17/22] Compile [x64] AHSpellTests.cpp
-[18/22] Compile [x64] AHSpellcasting.cpp
-[19/22] Compile [x64] Module.AshenHollow.cpp
-[20/22] Link [x64] UnrealEditor-AshenHollow.lib
-[21/22] Link [x64] UnrealEditor-AshenHollow.dll
-[22/22] WriteMetadata AshenHollowEditor.target [NoUba]
-
-Total time in Unreal Build Accelerator local executor: 287.24 seconds
+Creating makefile for AshenHollowEditor (command line arguments changed)
+Target is up to date
+Using Unreal Build Accelerator local executor to run 0 action(s)
+Total time in Unreal Build Accelerator local executor: 0.36 seconds
 Output binary: C:\Program Files\Epic Games\UE_5.8\Engine\Binaries\Win64\UnrealEditor.exe
 
 Result: Succeeded
-Total execution time: 295.32 seconds
-Trace written to file C:\Users\lucas\AppData\Local\UnrealBuildTool\Trace.uba with size 30.9kb
+Total execution time: 4.07 seconds
+Trace written to file C:\Users\lucas\AppData\Local\UnrealBuildTool\Trace.uba with size 2.9kb

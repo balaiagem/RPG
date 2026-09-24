@@ -313,6 +313,8 @@ private:
     UPROPERTY() TObjectPtr<UAHEquipmentComponent> Equipment;
     UPROPERTY() TSubclassOf<UAnimInstance> LocomotionClass;
 
+    /** The swing clip for this archetype's weapon, or the generic attack as fallback. */
+    UAnimationAsset* WeaponClip() const;
     void PlayAttack();
     void PlayGesture(UAnimationAsset* Asset);
     /** Roll one d20 death save; updates counts; may revive or transition to true death. */

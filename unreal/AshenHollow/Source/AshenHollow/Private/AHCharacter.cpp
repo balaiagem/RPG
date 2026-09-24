@@ -49,7 +49,10 @@ AAHCharacter::AAHCharacter()
     static ConstructorHelpers::FObjectFinder<UAnimationAsset> CastClip(TEXT("/Game/AshenHollow/Animation/AH_Cast")),HealClip(TEXT("/Game/AshenHollow/Animation/AH_Heal")),RageClip(TEXT("/Game/AshenHollow/Animation/AH_Rage")),GuardClip(TEXT("/Game/AshenHollow/Animation/AH_Guard")),EvadeClip(TEXT("/Game/AshenHollow/Animation/AH_Evade"));
     CastAnimation=CastClip.Object; HealAnimation=HealClip.Object; RageAnimation=RageClip.Object; GuardAnimation=GuardClip.Object; EvadeAnimation=EvadeClip.Object;
     static ConstructorHelpers::FObjectFinder<UAnimationAsset> Sword(TEXT("/Game/AshenHollow/Animation/AH_SwordSlash")),Axe(TEXT("/Game/AshenHollow/Animation/AH_AxeCleave")),Mace(TEXT("/Game/AshenHollow/Animation/AH_MaceStrike")),Staff(TEXT("/Game/AshenHollow/Animation/AH_StaffStrike"));
-    WeaponAnimations={Sword.Object,Axe.Object,Mace.Object,Staff.Object};
+    // One entry per EAHWeaponKind, in enum order. A bow has no authored swing --
+    // shooting plays the cast clip -- so its melee bash borrows the staff strike,
+    // which is the closest two-handed motion we own.
+    WeaponAnimations={Sword.Object,Axe.Object,Mace.Object,Staff.Object,Staff.Object};
     GetMesh()->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 
     CameraBoom = CreateDefaultSubobject<USpringArmComponent>(TEXT("CameraBoom"));
@@ -479,9 +482,7 @@ bool AAHCharacter::TryOpportunityAttack(AAHCharacter* Mover, bool bConfirmed)
     // busy, so bIsAttacking / AnimationEnds are deliberately left untouched.
     if (auto* Anim = GetMesh()->GetAnimInstance())
     {
-        UAnimationAsset* Clip = WeaponAnimations.IsValidIndex(static_cast<int32>(AHRules::Class(HeroClass).Weapon))
-            ? WeaponAnimations[static_cast<int32>(AHRules::Class(HeroClass).Weapon)].Get()
-            : AttackAnimation.Get();
+        UAnimationAsset* Clip = WeaponClip();
         if (auto* Sequence = Cast<UAnimSequenceBase>(Clip))
         {
             Anim->SetRootMotionMode(ERootMotionMode::IgnoreRootMotion);
@@ -528,11 +529,52 @@ bool AAHCharacter::TryOpportunityAttack(AAHCharacter* Mover, bool bConfirmed)
 
 // ── Attack ────────────────────────────────────────────────────────────────────
 
+namespace
+{
+    /** A projectile's look and head count, chosen from the attack that fired it. */
+    struct FAHShotLook { EAHProjectileLook Look; int32 Heads; };
+
+    /**
+     * Every ranged attack used to draw the same three arcane spheres, so an arrow,
+     * a fire bolt and a magic missile were the same picture. The decision is made
+     * from the attack rather than the caster: a wizard's class-level Fire Bolt and
+     * a ranger's arrow both arrive here with no spell id, and only the weapon on
+     * the sheet tells them apart.
+     */
+    FAHShotLook ShotLook(int32 SpellId, int32 SpellRank, EAHWeaponKind Weapon)
+    {
+        if(SpellId < 0)
+            return Weapon==EAHWeaponKind::Bow
+                 ? FAHShotLook{ EAHProjectileLook::Arrow, 1 }
+                 : FAHShotLook{ EAHProjectileLook::Fire,  1 };
+        switch(static_cast<EAHSpell>(SpellId))
+        {
+            case EAHSpell::MagicMissile:  return { EAHProjectileLook::Arcane,   2+SpellRank };
+            case EAHSpell::ScorchingRay:  return { EAHProjectileLook::Fire,     3 };
+            case EAHSpell::FireBolt:
+            case EAHSpell::BurningHands:  return { EAHProjectileLook::Fire,     1 };
+            case EAHSpell::RayOfFrost:    return { EAHProjectileLook::Frost,    1 };
+            case EAHSpell::GuidingBolt:
+            case EAHSpell::SacredFlame:   return { EAHProjectileLook::Radiant,  1 };
+            case EAHSpell::InflictWounds: return { EAHProjectileLook::Necrotic, 1 };
+            default:                      return { EAHProjectileLook::Arcane,   1 };
+        }
+    }
+}
+
+UAnimationAsset* AAHCharacter::WeaponClip() const
+{
+    // EAHWeaponKind indexes WeaponAnimations. The bare subscript that used to sit
+    // in PlayAttack would have asserted the first time a new weapon kind was added
+    // without its clip, so every reader goes through this guard instead.
+    const int32 Index=static_cast<int32>(AHRules::Class(HeroClass).Weapon);
+    return WeaponAnimations.IsValidIndex(Index) ? WeaponAnimations[Index].Get() : AttackAnimation.Get();
+}
 void AAHCharacter::PlayAttack()
 {
     const bool bShot = PendingRange > 0.f || PendingSpellId>=0;
     MotionLabel=PendingSpellDamage>0?TEXT("CONJURANDO"):bShot?TEXT("MIRANDO"):TEXT("ATACANDO");
-    UAnimationAsset* Clip=(PendingSpellDamage>0||bShot)?CastAnimation.Get():WeaponAnimations[static_cast<int32>(AHRules::Class(HeroClass).Weapon)].Get();
+    UAnimationAsset* Clip=(PendingSpellDamage>0||bShot)?CastAnimation.Get():WeaponClip();
     auto* Sequence=Cast<UAnimSequenceBase>(Clip?Clip:AttackAnimation.Get());
     if (Sequence && GetMesh()->GetAnimInstance())
     {
@@ -556,8 +598,14 @@ void AAHCharacter::PlayAttack()
             for(const FAnimNotifyEvent& Event:Sequence->Notifies)
                 if(Event.Notify && Event.Notify->IsA<UAHNotify_MeleeImpact>())
                 { Travel=Event.GetTriggerTime(); break; }
+        const FAHShotLook Shot=ShotLook(PendingSpellId,PendingSpellRank,AHRules::Class(HeroClass).Weapon);
         MagicVisual=GetWorld()->SpawnActor<AAHMagicVisual>();
-        if(MagicVisual) MagicVisual->Initialize(GetMesh()->GetSocketLocation(TEXT("hand_r")),PendingTarget,Travel,PendingSpellId==static_cast<int32>(EAHSpell::MagicMissile)?2+PendingSpellRank:PendingSpellId==static_cast<int32>(EAHSpell::ScorchingRay)?3:PendingSpellId>=0?1:3);
+        if(MagicVisual)
+            MagicVisual->Initialize(GetMesh()->GetSocketLocation(TEXT("hand_r")),PendingTarget,
+                                    Travel,Shot.Heads,Shot.Look);
+        // The bow has its own skeleton and its own release clip, so the string
+        // actually snaps forward when the arrow leaves.
+        if(Shot.Look==EAHProjectileLook::Arrow && Equipment) Equipment->PlayShot();
     }
 }
 
