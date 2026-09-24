@@ -132,11 +132,14 @@ void AAHMagicVisual::TickArrow(float Progress,const FVector& End)
     const FVector Flight=End-Start;
     // Barely any arc. An arrow that loops like a magic missile stops reading as
     // an arrow, so this is a shallow sag rather than a lob.
-    const float Sag=FMath::Sin(PI*Progress)*FMath::Min(Flight.Size()*.03f,45.f);
-    const FVector Here=FMath::Lerp(Start,End,Progress)+FVector(0.f,0.f,Sag);
+    // Both arguments double: FMath::Min takes one T, and a length is a double
+    // while a literal like 45.f is a float, so the mix does not compile.
+    const double Reach=FMath::Min(Flight.Size()*0.03,45.0);
+    const double Sag=FMath::Sin(PI*Progress)*Reach;
+    const FVector Here=FMath::Lerp(Start,End,Progress)+FVector(0.0,0.0,Sag);
     SetActorLocation(Here);
     if(!Flight.IsNearlyZero())
-        SetActorRotation((FVector(Flight.X,Flight.Y,Flight.Z-Sag*2.f)).Rotation());
+        SetActorRotation((FVector(Flight.X,Flight.Y,Flight.Z-Sag*2.0)).Rotation());
 }
 
 void AAHMagicVisual::TickDarts(float Progress,const FVector& End)

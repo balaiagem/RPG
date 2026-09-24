@@ -645,14 +645,17 @@ bool AAHCharacter::TryAttack(AAHCharacter* Target)
     GetCharacterMovement()->StopMovementImmediately();
     SetActorRotation(FRotator(0, (Target->GetActorLocation() - GetActorLocation()).Rotation().Yaw, 0));
 
+    // Cover counts in melee too, by the book. At 190 cm of reach it will rarely
+    // fire, but a rule that only half applies is worse than one that does not.
+    const EAHCover MeleeCover = Target->CoverFrom(this);
     PendingRoll = UAHDiceRules::RollAttack(
         Dice,
         AttackBonus+(BlessTurns>0?Dice.RandRange(1,4):0),
-        Target->ArmorClass,
+        Target->ArmorClass + AHArena::ArmorBonus(MeleeCover),
         1,
         DamageSides,
         DamageModifier + (bRaging?2:0),
-        ((bSteadyAim || bReckless || Target->bReckless || Target->HasGuidingMark())?1:0)-(Target->bDodging?1:0),IsLucky());
+        ((bSteadyAim || bReckless || Target->bReckless || Target->HasGuidingMark() || HasHighGroundOn(Target))?1:0)-(Target->bDodging?1:0),IsLucky());
     Target->GuidingSource.Reset(); bSteadyAim=false;
     PendingTarget = Target;
     bAttackedSinceTurnEnd=true;
@@ -712,6 +715,26 @@ void AAHCharacter::UseRacialAbility()
     AddLog(Feedback);
 }
 
+FVector AAHCharacter::FootLocation() const
+{
+    // Cover and height are questions about the ground someone stands on, and
+    // GetActorLocation on a Character answers with the capsule's middle.
+    return GetActorLocation() - FVector(0.f, 0.f, GetCapsuleComponent()
+        ? GetCapsuleComponent()->GetScaledCapsuleHalfHeight() : 0.f);
+}
+
+EAHCover AAHCharacter::CoverFrom(const AAHCharacter* Shooter) const
+{
+    if (!IsValid(Shooter) || !GetWorld()) return EAHCover::None;
+    const auto* Arena = GetWorld()->GetAuthGameMode<AAHGameMode>();
+    return Arena ? Arena->CoverBetween(Shooter->FootLocation(), FootLocation()) : EAHCover::None;
+}
+
+bool AAHCharacter::HasHighGroundOn(const AAHCharacter* Target) const
+{
+    return IsValid(Target) && AHArena::HasHighGround(FootLocation(), Target->FootLocation());
+}
+
 bool AAHCharacter::IsThreatenedInMelee() const
 {
     for (TActorIterator<AAHCharacter> It(GetWorld()); It; ++It)
@@ -753,10 +776,15 @@ bool AAHCharacter::TryRangedAttack(AAHCharacter* Target)
 
     // Shooting with someone in your face is a disadvantaged shot.
     const bool bCrowded = IsThreatenedInMelee();
+    // Advantage sources stay grouped in one ||: high ground and reckless attack
+    // together are still advantage, never two steps of it.
+    const EAHCover ShotCover = Target->CoverFrom(this);
     PendingRoll = UAHDiceRules::RollAttack(
-        Dice, AttackBonus+(BlessTurns>0?Dice.RandRange(1,4):0), Target->ArmorClass, 1,
+        Dice, AttackBonus+(BlessTurns>0?Dice.RandRange(1,4):0),
+        Target->ArmorClass + AHArena::ArmorBonus(ShotCover), 1,
         Sheet.RangedSides, Sheet.RangedBonus,
-        ((bSteadyAim || bReckless || Target->bReckless || Target->HasGuidingMark()) ? 1 : 0) - ((Target->bDodging || bCrowded) ? 1 : 0),
+        ((bSteadyAim || bReckless || Target->bReckless || Target->HasGuidingMark() || HasHighGroundOn(Target)) ? 1 : 0)
+            - ((Target->bDodging || bCrowded) ? 1 : 0),
         IsLucky());
     PendingTarget = Target;
     Target->GuidingSource.Reset(); bSteadyAim=false;
@@ -765,9 +793,15 @@ bool AAHCharacter::TryRangedAttack(AAHCharacter* Target)
     bAttackedSinceTurnEnd = true;
 
     PlayAttack();
-    Feedback = bCrowded
-        ? FString::Printf(TEXT("%s com desvantagem: inimigo em corpo a corpo"), Sheet.RangedName)
-        : FString::Printf(TEXT("%s..."), Sheet.RangedName);
+    // Say what the dice were told. A modifier the player cannot see reads as the
+    // game cheating, which is how advantage and halfling luck read before.
+    FString Why;
+    if (bCrowded) Why += TEXT(" · desvantagem: inimigo em corpo a corpo");
+    if (ShotCover != EAHCover::None)
+        Why += FString::Printf(TEXT(" · %s do alvo: +%d CA"),
+                               AHArena::CoverName(ShotCover), AHArena::ArmorBonus(ShotCover));
+    if (HasHighGroundOn(Target)) Why += TEXT(" · vantagem: terreno elevado");
+    Feedback = FString::Printf(TEXT("%s%s"), Sheet.RangedName, *Why);
     return true;
 }
 

@@ -234,7 +234,7 @@ void UAHEquipmentComponent::Configure(EAHWeaponKind Kind)
         TipHeight=Art.TipHeight;
         // Only a skeletal weapon can be animated, so the handle stays null for the
         // primitive fallback and PlayShot quietly does nothing.
-        WeaponMesh=Cast<USkeletalMeshComponent>(LastAttached);
+        WeaponMesh=Cast<USkeletalMeshComponent>(LastAttached.Get());
         ShotPath=Art.ShotAnimation;
     }
     else BuildPrimitiveWeapon(Kind);

@@ -355,3 +355,56 @@ primeira pancada corpo a corpo de um arqueiro. Agora os dois leitores passam por
 `AAHCharacter::WeaponClip()`, que checa o indice, e a lista de clipes tem uma
 entrada por tipo. Atirar toca o clipe de conjuracao; a pancada com o arco pega
 emprestado o golpe de cajado, que e o movimento de duas maos mais proximo que temos.
+
+## Cobertura, terreno elevado e arena procedural (2026-09-24)
+
+### Regras
+
+`AHArena` guarda as duas coisas: a regra de cobertura e o sorteio do cenario.
+
+- **Cobertura parcial: +2 CA. Cobertura de tres quartos: +5 CA.** SRD 5.1. Um
+  obstaculo entre atirador e alvo conta pela altura que ele tem **medida a partir do
+  chao do ALVO** — o caixote que esconde alguem sobre as lajes nao esconde ninguem em
+  cima do deck. Menos de 30% do corpo nao e cobertura; a partir de 70% vira tres
+  quartos.
+- **Terreno elevado da vantagem em ataque.** Isso e regra do Baldur's Gate, **nao** do
+  SRD: o livro nao concede vantagem por altura. Esta aqui porque paridade com o BG3 e
+  o objetivo declarado. Precisa de 1 m de diferenca, entao subir num caixote nao vale;
+  o deck vale.
+- A vantagem por altura entra no **mesmo grupo `||`** das outras fontes. Altura mais
+  ataque temerario continua sendo vantagem, nunca dois passos dela.
+- Cobertura vale em corpo a corpo tambem, como no livro. Com 190 cm de alcance quase
+  nunca dispara, mas regra que so vale pela metade e pior que regra que nao existe.
+
+Cobertura **total** nao sai daqui. Quem decide se o tiro esta bloqueado e o teste de
+linha de visao do `TryRangedAttack`, que tambem enxerga casas e muros que nunca
+estiveram nesta lista. Dois sistemas respondendo a mesma pergunta e como eles acabam
+discordando.
+
+### Sorteio por encontro
+
+`AHArena::Generate` produz de 9 a 14 obstaculos a partir de uma semente.
+`AHGameMode::BuildArena` os cria, **mede o bounding box real de cada um** e grava raio
+e altura de volta na lista — a conta de cobertura roda contra o tamanho verdadeiro do
+prop, nao contra um numero digitado. Cada `NextEncounter` sorteia de novo.
+
+Tres regras protegem o encontro de uma semente ruim: nada nasce a menos de 4 m de
+qualquer um dos dois lados, nada entra no corredor de 3 m entre os nascimentos, e nada
+cai dentro do deck elevado. Verificado por simulacao em 4000 sementes antes de
+compilar: minimo de 9 obstaculos, nenhuma arena vazia, nenhuma violacao.
+
+### HUD
+
+A porcentagem de acerto agora **usa a mesma conta dos dados**: CA com cobertura,
+vantagem por altura, desvantagem por esquiva ou por atirar com inimigo colado. Antes
+ela ignorava vantagem por completo. Embaixo dela sai uma linha dizendo por que — o
+custo de nao fazer isso ja apareceu duas vezes neste projeto, com vantagem e com a
+sorte do halfling: regra invisivel le como bug.
+
+### Arena
+
+26x26 m, nascimentos a 10 m em (0,-500) e (0,+500). Nao e o maior possivel de
+proposito: com os dois lados em pontas opostas, seriam dois ou tres turnos so andando
+antes de qualquer coisa acontecer, e combate por turnos nao tem folga para turno
+morto. O deck elevado fica em x=780, 1,3 m de altura, com duas rampas de ~21 graus,
+bem abaixo dos 44 que o agente de navegacao aceita.

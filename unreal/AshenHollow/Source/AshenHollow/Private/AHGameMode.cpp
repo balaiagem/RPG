@@ -3,7 +3,64 @@
 #include "AHPlayerController.h"
 #include "AHCombatHUD.h"
 #include "Kismet/GameplayStatics.h"
+#include "Engine/StaticMeshActor.h"
+#include "Engine/StaticMesh.h"
+#include "Components/StaticMeshComponent.h"
 #include "GameFramework/CharacterMovementComponent.h"
+const FVector AAHGameMode::HeroSpawn(0.f, -500.f, 110.f);
+const FVector AAHGameMode::FoeSpawn (0.f,  500.f, 110.f);
+
+int32 AAHGameMode::FreshSeed()
+{
+    return static_cast<int32>(FPlatformTime::Cycles64() ^ static_cast<uint64>(FDateTime::Now().GetTicks()));
+}
+
+void AAHGameMode::BuildArena(int32 Seed)
+{
+    ArenaSeed = Seed;
+    for (auto& Old : ObstacleActors) if (IsValid(Old)) Old->Destroy();
+    ObstacleActors.Reset();
+
+    FRandomStream Dice(Seed);
+    Obstacles = AHArena::Generate(Dice, HeroSpawn, FoeSpawn);
+
+    FActorSpawnParameters Params;
+    Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+    for (FAHArenaPiece& Piece : Obstacles)
+    {
+        UStaticMesh* Mesh = LoadObject<UStaticMesh>(nullptr, *Piece.MeshPath, nullptr, LOAD_NoWarn|LOAD_Quiet);
+        if (!Mesh) continue;
+        auto* Prop = GetWorld()->SpawnActor<AStaticMeshActor>(Piece.Location, FRotator(0.f, Piece.Yaw, 0.f), Params);
+        if (!Prop) continue;
+        auto* Body = Prop->GetStaticMeshComponent();
+        if (Body)
+        {
+            // Movable before anything else: a Static actor spawned at runtime
+            // refuses to be moved or scaled afterwards.
+            Body->SetMobility(EComponentMobility::Movable);
+            Body->SetStaticMesh(Mesh);
+        }
+        Prop->SetActorScale3D(FVector(Piece.Scale));
+
+        // Measured, never assumed. The generator's radius and height are only
+        // spacing estimates; the cover rule runs against the prop's real bounds,
+        // and the prop is dropped so its base rests on the flagstones.
+        FVector Origin, Extent;
+        Prop->GetActorBounds(false, Origin, Extent);
+        Piece.Radius = static_cast<float>(FMath::Max(Extent.X, Extent.Y));
+        Piece.Height = static_cast<float>(Extent.Z * 2.0);
+        Prop->SetActorLocation(FVector(Piece.Location.X, Piece.Location.Y,
+                                       Piece.Location.Z - (Origin.Z - Extent.Z)));
+        ObstacleActors.Add(Prop);
+    }
+    UE_LOG(LogTemp, Display, TEXT("AH_ARENA semente %d, %d obstaculos"), Seed, ObstacleActors.Num());
+}
+
+EAHCover AAHGameMode::CoverBetween(const FVector& From, const FVector& To) const
+{
+    return AHArena::CoverBetween(Obstacles, From, To);
+}
+
 AAHGameMode::AAHGameMode()
 {
     PrimaryActorTick.bCanEverTick = true;
@@ -14,9 +71,10 @@ AAHGameMode::AAHGameMode()
 void AAHGameMode::BeginPlay()
 {
     Super::BeginPlay();
+    BuildArena(FreshSeed());
     FActorSpawnParameters Params;
     Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AdjustIfPossibleButAlwaysSpawn;
-    if (auto* Enemy = GetWorld()->SpawnActor<AAHCharacter>(AAHCharacter::StaticClass(), FVector(0,100,110), FRotator(0,-90,0), Params))
+    if (auto* Enemy = GetWorld()->SpawnActor<AAHCharacter>(AAHCharacter::StaticClass(), FoeSpawn, FRotator(0,-90,0), Params))
     {
         Enemy->BecomeEnemy();
         Order.Add(Enemy);
@@ -84,11 +142,14 @@ bool AAHGameMode::NextEncounter()
     if(!bFinished || !Hero || (!Hero->IsAlive() && !Hero->bStabilized) || (Hero->Level==4 && Hero->Feat==0)) return false;
     FActorSpawnParameters Params;
     Params.SpawnCollisionHandlingOverride=ESpawnActorCollisionHandlingMethod::AdjustIfPossibleButAlwaysSpawn;
-    auto* Enemy=GetWorld()->SpawnActor<AAHCharacter>(FVector(0,100,110),FRotator(0,-90,0),Params);
+    auto* Enemy=GetWorld()->SpawnActor<AAHCharacter>(FoeSpawn,FRotator(0,-90,0),Params);
     if(!Enemy) return false;
     for(auto& Actor:Order) if(Actor && Actor->bEnemy) Actor->Destroy();
     Enemy->BecomeEnemy(); Enemy->MaxHealth+=(Hero->Level-1)*5; Enemy->Health=Enemy->MaxHealth;
-    Hero->Rest(); Hero->bPreparingSpells=Hero->MaxSpellSlots(1)>0; Hero->SetActorLocation(FVector(0,-600,110),false,nullptr,ETeleportType::TeleportPhysics);
+    Hero->Rest(); Hero->bPreparingSpells=Hero->MaxSpellSlots(1)>0; Hero->SetActorLocation(HeroSpawn,false,nullptr,ETeleportType::TeleportPhysics);
+    // A new encounter is a new arena: the props are re-rolled, so the second
+    // fight is never the first fight with a different foe standing in it.
+    BuildArena(FreshSeed());
     Order.Reset(); Order.Add(Enemy); ActiveIndex=0; Round=1; bStarted=false; bFinished=false;
     return true;
 }

@@ -23,12 +23,17 @@ import unreal
 MAP      = '/Game/AshenHollow/Maps/ArenaVillage'
 PACK     = '/Game/Fantastic_Village_Pack'
 
-# The playable square, in centimetres from the centre. This matches the grey-box
-# arena on purpose: AHGameMode spawns the foe at (0,100) and the PlayerStart sits
-# at (0,-600), and the movement budget of 900 per turn was balanced against this
-# size. Scenery goes outside RING so the navmesh stays the same clean square.
-HALF     = 900.0
-RING     = 960.0
+# The playable square, in centimetres from the centre. 26 x 26 m, with the two
+# spawns ten metres apart at (0,-500) and (0,+500) -- AHGameMode::HeroSpawn and
+# FoeSpawn hold the same two numbers and must agree with these.
+#
+# Ten metres is a deliberate compromise. A bigger square makes room to flank, to
+# fall back and to use range, but spawning the two sides at opposite ends would
+# spend two or three turns walking before anything happened, and a turn-based
+# fight cannot afford dead turns. Scenery stays outside RING so the navmesh is
+# still one clean square.
+HALF     = 1300.0
+RING     = 1360.0
 
 actors = unreal.get_editor_subsystem(unreal.EditorActorSubsystem)
 levels = unreal.get_editor_subsystem(unreal.LevelEditorSubsystem)
@@ -267,7 +272,7 @@ for existing in actors.get_all_level_actors():
 # paint: each plane gets the material's full 0-1 UV, so stone tiles at a
 # believable size instead of being stretched fifty metres across one cube. The
 # tighter, paler grid marks the square you actually fight on.
-GROUND_HALF = 2700.0
+GROUND_HALF = 3400.0
 stone  = asset(PACK + '/materials/MI_stonebrick_01')
 ground = asset(PACK + '/materials/MI_landscape') or asset(PACK + '/materials/MI_stonebrick_02')
 
@@ -277,7 +282,7 @@ if slab:
     align_top(slab, 0.0)
     dress(slab, ground, collide=True)
 
-def paving(material, half, tile, skip_half, tag):
+def paving(material, half, tile, skip_half, tag, lift=1.0):
     steps = int(round(2.0 * half / tile))
     for ix in range(steps):
         for iy in range(steps):
@@ -285,15 +290,15 @@ def paving(material, half, tile, skip_half, tag):
             py = -half + tile * (iy + 0.5)
             if skip_half and abs(px) < skip_half and abs(py) < skip_half:
                 continue        # the inner grid already covers this
-            slate = place('/Engine/BasicShapes/Plane', px, py, 1.0,
+            slate = place('/Engine/BasicShapes/Plane', px, py, lift,
                           label='%s_%d_%d' % (tag, ix, iy), ground=False)
             if slate:
                 scale_to(slate, tile, tile)
-                slate.set_actor_location(unreal.Vector(px, py, 1.0), False, False)
+                slate.set_actor_location(unreal.Vector(px, py, lift), False, False)
                 dress(slate, material, collide=False)
 
 paving(stone,  HALF,        300.0, 0.0,  'Paving')
-paving(ground, GROUND_HALF, 600.0, HALF, 'Outskirt')
+paving(ground, GROUND_HALF, 600.0, HALF, 'Outskirt', lift=0.5)
 
 # ── The square's walls: houses on four sides, fences closing the gaps ─────────
 HOUSES = [
@@ -342,22 +347,53 @@ for cx, cy in ((-RING, -RING), (RING, -RING), (-RING, RING), (RING, RING)):
             setp(glow, 'cast_shadows', False)
             setp(glow, 'volumetric_scattering_intensity', 1.4)
 
+# ── The raised deck ──────────────────────────────────────────────────────────
+# High ground has to exist somewhere for the rule to mean anything. One deck,
+# off to one side and clear of the line between the spawns, reached by two ramps
+# shallow enough for Recast to walk up (about 21 degrees, well under the 44 the
+# agent allows).
+#
+# These numbers are mirrored in AHArena.h as DeckCentreX / DeckKeepOut / DeckTop,
+# which is how the runtime prop generator knows not to bury a barrel inside the
+# deck. Change them here and change them there.
+DECK_X, DECK_HALF_X, DECK_HALF_Y, DECK_TOP = 780.0, 260.0, 380.0, 130.0
+
+deck = place('/Engine/BasicShapes/Cube', DECK_X, 0.0, 0.0, label='High Ground', ground=False)
+if deck:
+    scale_to(deck, 2.0 * DECK_HALF_X, 2.0 * DECK_HALF_Y, DECK_TOP)
+    align_top(deck, DECK_TOP)
+    dress(deck, stone, collide=True)
+
+def ramp(tag, from_x, from_y, to_x, to_y, width):
+    """
+    A sloped slab bridging the floor and the deck.
+
+    Scaled square first and rotated second: get_actor_bounds reports an
+    axis-aligned box, so measuring a slab that is already tilted would size it
+    against its shadow rather than against itself.
+    """
+    run  = math.hypot(to_x - from_x, to_y - from_y)
+    slab = place('/Engine/BasicShapes/Cube', 0.0, 0.0, 0.0, label=tag, ground=False)
+    if not slab:
+        return
+    scale_to(slab, math.hypot(run, DECK_TOP), width, 34.0)
+    slab.set_actor_rotation(unreal.Rotator(
+        roll=0.0,
+        pitch=math.degrees(math.atan2(DECK_TOP, run)),
+        yaw=math.degrees(math.atan2(to_y - from_y, to_x - from_x))), False)
+    # Sunk slightly, so the ramp overlaps floor and deck instead of leaving a
+    # lip at either end for a character to catch on.
+    slab.set_actor_location(unreal.Vector((from_x + to_x) * .5, (from_y + to_y) * .5,
+                                          DECK_TOP * .5 - 22.0), False, False)
+    dress(slab, stone, collide=True)
+
+ramp('Ramp_West',  DECK_X - DECK_HALF_X - 380.0, 0.0,    DECK_X - DECK_HALF_X, 0.0,    300.0)
+ramp('Ramp_North', DECK_X, DECK_HALF_Y + 380.0,          DECK_X, DECK_HALF_Y,          280.0)
+
 # ── Cover inside the square ──────────────────────────────────────────────────
-# Two clusters, deliberately off the line between the two spawns, so the opening
-# approach is never blocked but the space still asks you to choose a path. They
-# keep their collision: the navmesh flows around them, which is the whole point.
-place(PACK + '/blueprints/props/BP_PROP_cart_01',              -470.0,  340.0, 0.0,  25.0, label='Cover_Cart')
-place(PACK + '/meshes/props/container/SM_PROP_barrel_01',      -300.0,  430.0, 0.0,  10.0, label='Cover_Barrel_A')
-place(PACK + '/meshes/props/container/SM_PROP_barrel_03',      -250.0,  330.0, 0.0, 140.0, label='Cover_Barrel_B')
-place(PACK + '/meshes/props/container/SM_PROP_crate_01',       -560.0,  150.0, 0.0,  35.0, label='Cover_Crate')
-
-place(PACK + '/meshes/props/natural/SM_PROP_hay_01',            520.0, -260.0, 0.0,  60.0, label='Cover_Hay_A')
-place(PACK + '/meshes/props/natural/SM_PROP_hay_03',            640.0, -160.0, 0.0, 200.0, label='Cover_Hay_B')
-place(PACK + '/meshes/props/container/SM_PROP_box_01',          430.0, -400.0, 0.0,  15.0, label='Cover_Box_A')
-place(PACK + '/meshes/props/container/SM_PROP_box_03',          510.0, -430.0, 0.0, 110.0, label='Cover_Box_B')
-
-place(PACK + '/meshes/props/natural/SM_PROP_stone_01',         -640.0, -520.0, 0.0,  20.0, label='Cover_Stone_A')
-place(PACK + '/meshes/props/natural/SM_PROP_stone_02',          700.0,  520.0, 0.0, 250.0, label='Cover_Stone_B')
+# Nothing here any more. The obstacles are rolled at runtime by AHArena::Generate
+# and spawned by AHGameMode::BuildArena, so every encounter gets a fresh layout
+# and the map itself stays the permanent shell: ground, walls, deck, lighting.
 
 # ── Dressing outside the fight ───────────────────────────────────────────────
 place(PACK + '/blueprints/props/BP_PROP_well',        -RING - 260.0,  120.0, 0.0,  30.0, label='Well')
@@ -410,7 +446,7 @@ if nav:
 else:
     note('NavMeshBoundsVolume failed to spawn')
 
-start = actors.spawn_actor_from_class(unreal.PlayerStart, unreal.Vector(0.0, -600.0, 110.0),
+start = actors.spawn_actor_from_class(unreal.PlayerStart, unreal.Vector(0.0, -500.0, 110.0),
                                       unreal.Rotator(roll=0.0, pitch=0.0, yaw=90.0))
 if start:
     start.set_actor_label('Hero Spawn')

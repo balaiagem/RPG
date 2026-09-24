@@ -684,6 +684,13 @@ void AAHCombatHUD::DrawHUD()
     // Compile stamp of this file. Cheapest possible answer to "did my build land?".
     static const FString BuildStamp=FString(ANSI_TO_TCHAR(__DATE__))+TEXT(" ")+FString(ANSI_TO_TCHAR(__TIME__));
     Label(BuildStamp,1405,64,.60f,AHUI::Dim,true);
+    // The seed next to the build time. Two encounters showing the same number
+    // means the layout really did repeat; two different numbers with the same
+    // layout would mean the generator is broken. Either way it is answerable by
+    // looking, instead of by rebuilding and hoping.
+    const AAHGameMode* Arena=GetWorld()?GetWorld()->GetAuthGameMode<AAHGameMode>():nullptr;
+    if(Arena)
+        Label(FString::Printf(TEXT("ARENA %d"),Arena->ArenaSeed),1405,80,.60f,AHUI::Dim,true);
 
     // ── Title ────────────────────────────────────────────────────────────────
     Label(TEXT("ASHEN  HOLLOW"),32,27,1.1f,AHUI::Bright,false,true);
@@ -950,10 +957,22 @@ void AAHCombatHUD::DrawHUD()
     if(PC->HoveredEnemy&&PC->HoveredEnemy->IsAlive())
     {
         DrawTargetBrackets(PC->HoveredEnemy,PC,Now);
-        const float Base=FMath::Clamp(21+Hero->AttackBonus-PC->HoveredEnemy->ArmorClass,1,19)*.05f;
-        const int Chance=FMath::RoundToInt(100*(PC->HoveredEnemy->bDodging?Base*Base:Base));
-        Panel(640,130,320,68);
-        DrawRect(FLinearColor(AHUI::Red.R,AHUI::Red.G,AHUI::Red.B,.12f),OffsetX+641*Scale,OffsetY+131*Scale,318*Scale,66*Scale);
+        AAHCharacter* Foe=PC->HoveredEnemy.Get();
+
+        // The number on screen has to be the number the dice will use. Cover,
+        // high ground and the crowded-shot penalty all move it, and a modifier
+        // the player cannot see reads as the game cheating -- which is exactly
+        // how advantage and halfling luck read before they were surfaced.
+        const EAHCover Shielded=Foe->CoverFrom(Hero);
+        const int32 TargetAC=Foe->ArmorClass+AHArena::ArmorBonus(Shielded);
+        const bool bHigh=Hero->HasHighGroundOn(Foe);
+        const bool bFavoured=bHigh||Hero->bSteadyAim||Hero->bReckless||Foe->bReckless||Foe->HasGuidingMark();
+        const bool bHindered=Foe->bDodging||(Hero->HasRangedAttack()&&Hero->IsThreatenedInMelee());
+        const float Base=FMath::Clamp(21+Hero->AttackBonus-TargetAC,1,19)*.05f;
+        const float Odds=bFavoured==bHindered?Base:bFavoured?1.f-(1.f-Base)*(1.f-Base):Base*Base;
+        const int Chance=FMath::RoundToInt(100*Odds);
+        Panel(640,130,320,90);
+        DrawRect(FLinearColor(AHUI::Red.R,AHUI::Red.G,AHUI::Red.B,.12f),OffsetX+641*Scale,OffsetY+131*Scale,318*Scale,88*Scale);
         Label(PC->HoveredEnemy->EnemyName,800,140,1.f,AHUI::Bright,true,true);
         const float TBX=OffsetX+648*Scale,TBY=OffsetY+160*Scale,TBW=292*Scale,TBH=8*Scale;
         DrawRect(FLinearColor(.06f,.008f,.008f,1.f),TBX,TBY,TBW,TBH);
@@ -961,7 +980,19 @@ void AAHCombatHUD::DrawHUD()
         DrawRect(FLinearColor::LerpUsingHSV(AHUI::Red,AHUI::Amber,TF),TBX,TBY,TBW*TF,TBH);
         DrawRect(FLinearColor(1,1,1,.07f),TBX,TBY,TBW*TF,TBH*.4f);
         const FLinearColor CC=Chance>=60?AHUI::Green:Chance>=35?AHUI::Amber:AHUI::Red;
-        Label(FString::Printf(TEXT("%d%% de acerto  ·  CA %d"),Chance,PC->HoveredEnemy->ArmorClass),800,176,.86f,CC,true);
+        Label(Shielded==EAHCover::None
+            ? FString::Printf(TEXT("%d%% de acerto  ·  CA %d"),Chance,TargetAC)
+            : FString::Printf(TEXT("%d%% de acerto  ·  CA %d (%d +%d)"),Chance,TargetAC,
+                              Foe->ArmorClass,AHArena::ArmorBonus(Shielded)),
+            800,176,.86f,CC,true);
+
+        // Why it is that number, in words, under the percentage.
+        FString Reading;
+        if(Shielded!=EAHCover::None) Reading+=AHArena::CoverName(Shielded);
+        if(bHigh) { if(!Reading.IsEmpty()) Reading+=TEXT("  ·  "); Reading+=TEXT("TERRENO ELEVADO: VANTAGEM"); }
+        if(bHindered) { if(!Reading.IsEmpty()) Reading+=TEXT("  ·  "); Reading+=TEXT("DESVANTAGEM"); }
+        if(!Reading.IsEmpty())
+            Label(Reading,800,196,.72f,Shielded!=EAHCover::None?AHUI::Amber:AHUI::Teal,true);
     }
 
     // ═══════════════════════════════════════════════════════════════════════

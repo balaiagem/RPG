@@ -7,6 +7,7 @@
 #include "AHTurnBudget.h"
 #include "AHClassData.h"
 #include "AHSpellData.h"
+#include "AHArena.h"
 #include "AHCharacter.generated.h"
 
 class UAbilitySystemComponent;
@@ -193,6 +194,18 @@ public:
     bool TryAttack(AAHCharacter* Target);
 
     // ── Ranged attacks ────────────────────────────────────────────────────────
+    // ── Cover and high ground ────────────────────────────────────────────────
+    /** Ground level under this character, not the capsule centre. */
+    FVector FootLocation() const;
+    /** How much the arena's obstacles shield THIS character from Shooter. */
+    EAHCover CoverFrom(const AAHCharacter* Shooter) const;
+    /**
+     * True when this character stands high enough above Target to shoot down on
+     * it. Advantage from high ground is a Baldur's Gate rule, not an SRD one; it
+     * is here because parity with that game is the goal.
+     */
+    bool HasHighGroundOn(const AAHCharacter* Target) const;
+
     /** True when this archetype can shoot; see FAHClassSheet::RangedRange. */
     bool HasRangedAttack() const { return AHRules::Class(HeroClass).RangedRange > 0; }
     /** Range in centimetres, 0 for a melee-only archetype. */
