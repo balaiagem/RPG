@@ -274,6 +274,18 @@ void AAHCharacter::Tick(float DeltaSeconds)
                     break;
                 }
         CameraBoom->TargetOffset = FMath::VInterpTo(CameraBoom->TargetOffset, FocusOffset, DeltaSeconds, 3.f);
+
+        CameraYaw   = FMath::FInterpTo(CameraYaw,   CameraYawTarget,   DeltaSeconds, 8.f);
+        CameraReach = FMath::FInterpTo(CameraReach, CameraReachTarget, DeltaSeconds, 7.f);
+        if (FMath::Abs(CameraYaw - CameraYawTarget) < .05f)
+        {
+            // Settled: fold both back into -180..180 together, so a long session
+            // of turning the same way never drifts into large angles. Folding the
+            // pair at once means there is nothing to see.
+            CameraYaw = CameraYawTarget = static_cast<float>(FRotator::NormalizeAxis(CameraYawTarget));
+        }
+        CameraBoom->SetRelativeRotation(FRotator(CameraPitch, CameraYaw, 0.f));
+        CameraBoom->TargetArmLength = CameraReach;
     }
 
     if (ReactionEnds > 0.f && Now >= ReactionEnds)
@@ -1046,6 +1058,20 @@ void AAHCharacter::Disengage()
     AAHCombatBurst::Emit(GetWorld(), GetActorLocation() - FVector(0, 0, 45), EAHBurst::Guard);
     Feedback = TEXT("Desengajar: seu movimento não provoca ataques de oportunidade neste turno");
     AddLog(TEXT("Desengajar: movimento livre de reações neste turno"));
+}
+
+void AAHCharacter::RotateCamera(float Degrees)
+{
+    if (bEnemy) return;
+    CameraYawTarget += Degrees;
+}
+
+void AAHCharacter::ZoomCamera(float Steps)
+{
+    if (bEnemy) return;
+    // Clamped so the view can never end up inside the character or so far out
+    // that the action stops being readable.
+    CameraReachTarget = FMath::Clamp(CameraReachTarget + Steps * 260.f, 1200.f, 3600.f);
 }
 
 void AAHCharacter::Dash()

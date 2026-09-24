@@ -24,8 +24,8 @@ public:
     /** Where the two sides start. Ten metres apart, so contact is one move away. */
     static const FVector HeroSpawn;
     static const FVector FoeSpawn;
-    /** Obstacles for the current encounter. Re-rolled from a new seed each time. */
-    TArray<FAHArenaPiece> Obstacles;
+    /** The whole encounter space, re-rolled from a new seed each time. */
+    FAHArenaPlan Plan;
     UPROPERTY() TArray<TObjectPtr<AActor>> ObstacleActors;
     /** Clears the old props and lays out a fresh encounter from Seed. */
     void BuildArena(int32 Seed);
@@ -41,6 +41,8 @@ public:
     /** Seed behind the layout on screen. Shown in the HUD so "procedural" is
      *  something you can watch change, rather than something you take on faith. */
     int32 ArenaSeed = 0;
+    /** Points the map's baked light actors at whatever hour this arena rolled. */
+    void ApplyArenaLight();
     /** Cover the target standing at To has against a shooter standing at From. */
     EAHCover CoverBetween(const FVector& From, const FVector& To) const;
 

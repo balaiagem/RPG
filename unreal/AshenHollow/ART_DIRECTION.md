@@ -241,3 +241,102 @@ para o mannequin do UE5, de fora do que temos hoje.
 
 O arco tambem fica na mao direita, porque e onde esta o ponto de encaixe. Arqueiro
 segura na esquerda; junto com a animacao do corpo, e a mesma correcao.
+
+## A varredura de sombreamento (2026-09-24)
+
+`Scripts/Find-Shadowing.py`, chamado pelo `Build-Editor.ps1` antes de compilar.
+
+Sombreamento de variavel (C4456) e erro de build neste projeto e ja custou duas
+rodadas. A primeira varredura que escrevi procurava local escondendo **membro** —
+o caso que tinha me mordido antes — e C4456 e qualquer local escondendo local, que
+e justamente o caso que passou.
+
+A segunda versao pegou o erro certo e mais dez falsos positivos: ela colocava o
+`I` de um `for` no escopo de fora, entao dois lacos irmaos brigavam. Varredura com
+ruido e varredura que a gente aprende a ignorar, que e exatamente como a primeira
+falhou. A versao final modela escopo de `for`, `if`, `while` e `switch` como escopo
+proprio que termina com o comando.
+
+**Calibracao importa mais que a deteccao.** A prova de que serve nao foi achar o
+erro: foi dar **zero** em oito arquivos que ja compilavam, incluindo os dois que a
+versao anterior acusava por engano. Ferramenta que so sabe acusar nao esta testando
+nada.
+
+### E entao ela derrubou o build
+
+Na primeira vez que rodou na maquina do Lucas, ela quebrou a compilacao inteira —
+Windows sem Python instalado resolve `python` para o atalho da Microsoft Store, que
+existe como comando e nao executa nada. O `Get-Command python` achou o atalho e deu
+por certo. **Testar se o comando existe nao prova nada; so rodar prova.**
+
+Duas correcoes, e a segunda importa mais que a primeira:
+
+- usar o Python que o **proprio Unreal** traz
+  (`Engine/Binaries/ThirdParty/Python3/Win64/python.exe`), que existe por definicao
+  em qualquer maquina que consiga rodar os scripts de editor deste projeto;
+- **um passo de conferencia nunca derruba o build por problema dele mesmo.** Sem
+  interpretador, varredura quebrada, saida inesperada: tudo vira aviso e a
+  compilacao segue. So achar sombreamento de verdade para — e mesmo assim so porque
+  o compilador pararia dois minutos depois de qualquer jeito. Tem `-SkipShadowScan`
+  para desligar, e o `catch` e sem tipo de proposito, para que nada escape dali.
+
+### Apagar codigo morto por fatia de texto
+
+Ao enxugar o `Build-Arena.py` eu removi duas funcoes que tinham ficado sem uso,
+recortando do "espaco em branco antes do `def`" ate "o proximo `def`". Essa fatia
+levou junto **o bloco que cria e esvazia o nivel e o bloco inteiro do chao** — um
+terco util do arquivo. O script continuou sendo Python valido, `ast.parse` passou,
+e eu entreguei.
+
+Quebrou na maquina do Lucas com `NameError: name 'stone' is not defined`, que e o
+sintoma mais raso de um estrago muito maior: sem aquele bloco, o script teria
+construido dentro do nivel que estivesse aberto, sem limpar nada.
+
+**Checar sintaxe nao e checar nada.** Uma edicao estrutural pede uma checagem
+semantica. `python3 -m pyflakes Scripts/*.py` resolve nomes e apontaria o problema
+na hora — apontou, assim que rodei. Isso passa a ser obrigatorio depois de
+qualquer edicao nos scripts de editor, e nao e checagem para a maquina do Lucas:
+e checagem para eu fazer antes de entregar.
+
+### Codigo de saida nao e veredito
+
+O `Build-Arena.ps1` reportou falha num mapa que tinha construido perfeitamente:
+194 atores, navegacao de 1300 x 1300, `AH_ARENA_CLEAN`, mapa salvo. O commandlet do
+Unreal devolve **o numero de Errors que registrou**, e o script estava pedindo ao
+motor para apagar atores que nunca foram do nivel — configuracoes do mundo, o brush
+padrao, os dados de navegacao. Cada recusa vira um Error no log. Dezenas de recusas
+inofensivas viraram um codigo de saida diferente de zero, e o `.ps1` leu isso como
+fracasso.
+
+Dois consertos, e o segundo vale para qualquer script destes:
+
+- nao pedir o que nao vai ser feito: a limpeza pula por classe os atores que sao
+  permanentes, entao o log fica limpo de verdade em vez de ruidoso;
+- **julgar pelo que o script diz que fez, nao pelo codigo de saida.** O marcador
+  `AH_ARENA_BUILT` com a contagem de atores e a verdade; o codigo de saida e uma
+  pista. Se o marcador esta la, um codigo diferente de zero vira aviso amarelo e a
+  vida segue. Se o marcador nao esta, ai sim e falha — e o codigo de saida entra na
+  mensagem para ajudar a achar o motivo.
+
+### "LIGHTING NEEDS TO BE REBUILT"
+
+Apareceu na tela assim que a arena passou a ser montada em tempo de execucao, e a
+causa e a mesma dos dois lados: **mobilidade**.
+
+Os blueprints do pacote da vila foram feitos para um nivel com luz assada, entao as
+malhas e as luzes deles nascem em mobilidade **Static** ou **Stationary**. Criados
+depois que o nivel carregou, isso esta errado duas vezes: o motor passa a contar
+primitivas que esperam lightmap e pede a reconstrucao, e uma primitiva estatica
+criada em tempo de execucao nao tem como ser iluminada direito de qualquer jeito —
+o lightmap que ela espera nunca foi assado e nunca sera.
+
+Reconstruir a luz nao resolveria: nao ha uma unica luz estatica neste projeto, entao
+nao ha nada para assar. A resposta e parar de pedir.
+
+- `AHGameMode::BuildArena` varre **todos os componentes de cena** de cada ator que
+  cria e forca mobilidade Movable — componentes de cena, e nao so as malhas, porque
+  um braseiro carrega a propria luz e luz estacionaria e a metade mais barulhenta
+  da mesma reclamacao;
+- `Build-Arena.py` faz a mesma varredura no mapa antes de salvar, e registra quantos
+  componentes trocou (`AH_ARENA_DYNAMIC`), para que "nenhum" seja uma resposta
+  visivel e nao uma suposicao.

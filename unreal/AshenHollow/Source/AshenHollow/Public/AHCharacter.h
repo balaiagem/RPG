@@ -194,6 +194,21 @@ public:
     bool TryAttack(AAHCharacter* Target);
 
     // ── Ranged attacks ────────────────────────────────────────────────────────
+    // ── Camera ────────────────────────────────────────────────────────────────
+    /**
+     * Turns the view by Degrees. A fixed camera hides whatever a house happens to
+     * stand in front of, and in a game where cover and line of sight decide the
+     * roll, not being able to look round a corner is a rules problem and not only
+     * a comfort one.
+     *
+     * Eight steps of 45 degrees rather than free rotation: the isometric read is
+     * what makes distance judgeable at a glance, and a camera that can sit at any
+     * angle quietly takes that away.
+     */
+    void RotateCamera(float Degrees);
+    /** Pulls the view in or out one notch. */
+    void ZoomCamera(float Steps);
+
     // ── Cover and high ground ────────────────────────────────────────────────
     /** Ground level under this character, not the capsule centre. */
     FVector FootLocation() const;
@@ -262,6 +277,12 @@ public:
     bool IsLucky() const { return !bEnemy && AHRules::Ancestry(Ancestry).bLucky; }
 
 private:
+    // Where the view is now and where it is heading. Easing between the two is
+    // what keeps a 45 degree step from losing the player's bearings.
+    float CameraYaw = -45.f, CameraYawTarget = -45.f;
+    float CameraReach = 2200.f, CameraReachTarget = 2200.f;
+    static constexpr float CameraPitch = -48.f;
+
     FRandomStream Dice;
     float NextThink = 0.f;
 

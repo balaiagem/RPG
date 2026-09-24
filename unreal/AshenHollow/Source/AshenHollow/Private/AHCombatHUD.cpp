@@ -690,7 +690,7 @@ void AAHCombatHUD::DrawHUD()
     // looking, instead of by rebuilding and hoping.
     const AAHGameMode* Arena=GetWorld()?GetWorld()->GetAuthGameMode<AAHGameMode>():nullptr;
     if(Arena)
-        Label(FString::Printf(TEXT("ARENA %d"),Arena->ArenaSeed),1405,80,.60f,AHUI::Dim,true);
+        Label(FString::Printf(TEXT("%s  %d"),*Arena->Plan.Name,Arena->ArenaSeed),1405,80,.60f,AHUI::Dim,true);
 
     // ── Title ────────────────────────────────────────────────────────────────
     Label(TEXT("ASHEN  HOLLOW"),32,27,1.1f,AHUI::Bright,false,true);
@@ -856,7 +856,7 @@ void AAHCombatHUD::DrawHUD()
 
     if(HoveredBox==TEXT("EndTurn")) Tooltip=TEXT("Encerra seu turno. Ação, bônus e movimento renovam no próximo.");
     Label(Tooltip,800,720,.86f,AHUI::Text,true);
-    Label(TEXT("Botão direito: mover / alvo     Sair do alcance inimigo provoca um ataque de oportunidade     C: analisar     F5: reiniciar"),800,882,.68f,AHUI::Dim,true);
+    Label(TEXT("Botão direito: mover / alvo    A / D: girar câmera    Roda: zoom    C: analisar    F5: reiniciar    Sair do alcance provoca ataque de oportunidade"),800,882,.66f,AHUI::Dim,true);
 
     // ═══════════════════════════════════════════════════════════════════════
     // COMBAT LOG

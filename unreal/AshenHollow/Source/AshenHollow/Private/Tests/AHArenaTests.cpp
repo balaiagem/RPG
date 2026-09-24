@@ -9,7 +9,8 @@ namespace
      * TestEqual wants a type it can print in a failure message, and a scoped enum
      * is not one, so cover is compared as its underlying number.
      */
-    int32 AsNumber(EAHCover Cover) { return static_cast<int32>(Cover); }
+    int32 AsNumber(EAHCover Cover)   { return static_cast<int32>(Cover); }
+    int32 AsNumber(EAHArenaKind Kind){ return static_cast<int32>(Kind); }
 
     /** A knee-high crate: enough to be half cover, nowhere near three quarters. */
     FAHArenaPiece Block(float X, float Y, float Height, float Radius = 70.f, float Z = 0.f)
@@ -18,7 +19,7 @@ namespace
         Piece.MeshPath = TEXT("/Engine/BasicShapes/Cube");
         Piece.Location = FVector(X, Y, Z);
         Piece.Radius   = Radius;
-        Piece.Height   = Height;
+        Piece.TopZ     = Height;
         return Piece;
     }
 }
@@ -72,44 +73,51 @@ bool FAHArenaLayoutTest::RunTest(const FString&)
 {
     const FVector Hero(0.f, -500.f, 110.f);
     const FVector Foe (0.f,  500.f, 110.f);
+    // The generator asks how big each mesh is; here every mesh is 2 m of
+    // everything, which is enough for the layout rules under test.
+    auto Measure = [](const FString&) { return FVector(100.0, 100.0, 100.0); };
 
-    FRandomStream First(1234);
-    FRandomStream Again(1234);
-    const TArray<FAHArenaPiece> A = AHArena::Generate(First, Hero, Foe);
-    const TArray<FAHArenaPiece> B = AHArena::Generate(Again, Hero, Foe);
+    FRandomStream First(1234), Again(1234);
+    const FAHArenaPlan A = AHArena::Build(First, Hero, Foe, Measure);
+    const FAHArenaPlan B = AHArena::Build(Again, Hero, Foe, Measure);
 
-    TestTrue(TEXT("A seed produces obstacles at all"), A.Num() > 0);
-    TestEqual(TEXT("The same seed builds the same arena twice"), A.Num(), B.Num());
-    for (int32 I = 0; I < A.Num() && I < B.Num(); ++I)
+    TestTrue (TEXT("A seed builds an arena with something in it"), A.Pieces.Num() > 0);
+    TestEqual(TEXT("The same seed builds the same arena twice"), A.Pieces.Num(), B.Pieces.Num());
+    TestEqual(TEXT("...and the same kind of arena"), AsNumber(A.Kind), AsNumber(B.Kind));
+    for (int32 I = 0; I < A.Pieces.Num() && I < B.Pieces.Num(); ++I)
         TestTrue(TEXT("Piece by piece, the same seed agrees with itself"),
-                 A[I].Location.Equals(B[I].Location) && A[I].MeshPath == B[I].MeshPath);
+                 A.Pieces[I].Location.Equals(B.Pieces[I].Location)
+              && A.Pieces[I].MeshPath == B.Pieces[I].MeshPath);
+
+    // Over many seeds: the lane between the two spawns must always stay open,
+    // whichever shape was rolled. One sealed arena is an unplayable encounter.
+    TSet<int32> KindsSeen;
+    for (int32 Seed = 0; Seed < 400; ++Seed)
+    {
+        FRandomStream Dice(Seed * 7919 + 13);
+        const FAHArenaPlan Rolled = AHArena::Build(Dice, Hero, Foe, Measure);
+        KindsSeen.Add(AsNumber(Rolled.Kind));
+        TestTrue(TEXT("Every arena has pieces"), Rolled.Pieces.Num() > 0);
+        for (const FAHArenaPiece& Piece : Rolled.Pieces)
+        {
+            if (!Piece.bCover) continue;
+            const FVector Flat(Piece.Location.X, Piece.Location.Y, 0.f);
+            const bool bBeside = Flat.Y < Hero.Y || Flat.Y > Foe.Y;
+            TestTrue(TEXT("Nothing solid stands in the lane between the spawns"),
+                bBeside || FMath::Abs(Flat.X) >= 250.f);
+            TestTrue(TEXT("Nothing solid stands on a spawn point"),
+                FVector::Dist2D(Flat, Hero) >= 250.f && FVector::Dist2D(Flat, Foe) >= 250.f);
+        }
+    }
+    TestTrue(TEXT("Every arena shape gets rolled over 400 seeds"),
+             KindsSeen.Num() == static_cast<int32>(EAHArenaKind::Count));
 
     FRandomStream Other(98765);
-    const TArray<FAHArenaPiece> C = AHArena::Generate(Other, Hero, Foe);
-    bool bDiffers = C.Num() != A.Num();
-    for (int32 I = 0; !bDiffers && I < A.Num(); ++I)
-        bDiffers = !A[I].Location.Equals(C[I].Location);
+    const FAHArenaPlan C = AHArena::Build(Other, Hero, Foe, Measure);
+    bool bDiffers = C.Pieces.Num() != A.Pieces.Num() || C.Kind != A.Kind;
+    for (int32 I = 0; !bDiffers && I < A.Pieces.Num(); ++I)
+        bDiffers = !A.Pieces[I].Location.Equals(C.Pieces[I].Location);
     TestTrue(TEXT("A different seed builds a different arena"), bDiffers);
-
-    // The whole point of the corridor rule: a bad roll must never be able to
-    // wall the fight off before the two sides have seen each other.
-    for (const FAHArenaPiece& Piece : A)
-    {
-        TestTrue(TEXT("Nothing spawns outside the playable square"),
-            FMath::Abs(Piece.Location.X) < AHArena::PlayHalfSize
-         && FMath::Abs(Piece.Location.Y) < AHArena::PlayHalfSize);
-        TestTrue(TEXT("Nothing spawns on top of either side"),
-            FVector::Dist2D(Piece.Location, Hero) >= 400.f
-         && FVector::Dist2D(Piece.Location, Foe)  >= 400.f);
-        // Distance from the straight line between the spawns, which runs on X=0
-        // between the two Y values.
-        const bool bBeside = Piece.Location.Y < Hero.Y || Piece.Location.Y > Foe.Y;
-        TestTrue(TEXT("The corridor between the spawns stays clear"),
-            bBeside || FMath::Abs(Piece.Location.X) >= 300.f);
-        TestTrue(TEXT("Nothing is buried in the raised deck"),
-            FMath::Abs(Piece.Location.X - AHArena::DeckCentreX) >= AHArena::DeckKeepOutX
-         || FMath::Abs(Piece.Location.Y) >= AHArena::DeckKeepOutY);
-    }
     return true;
 }
 

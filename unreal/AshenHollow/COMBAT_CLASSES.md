@@ -408,3 +408,75 @@ proposito: com os dois lados em pontas opostas, seriam dois ou tres turnos so an
 antes de qualquer coisa acontecer, e combate por turnos nao tem folga para turno
 morto. O deck elevado fica em x=780, 1,3 m de altura, com duas rampas de ~21 graus,
 bem abaixo dos 44 que o agente de navegacao aceita.
+
+## A arena inteira passa a ser sorteada (2026-09-24)
+
+Antes so os ~11 obstaculos eram procedurais; casas, muros, braseiros, deck e
+iluminacao estavam assados no mapa, entao duas arenas eram a mesma arena com
+barris em lugares diferentes. Agora `AHArena::Build` devolve a arena toda.
+
+**Quatro arquetipos**, sorteados por semente: praca da vila (fechada dos quatro
+lados, braseiros nos cantos), rua do mercado (predios nos dois lados longos, aberta
+nas pontas, barracas em duas fileiras), terreiro (campo aberto, cercas cortando o
+fundo, arvores, poco) e ruinas (muros de pedra quebrados, entulho, sem cerca).
+
+**A hora do dia tambem e sorteada** — angulo, temperatura e intensidade do sol e do
+ceu. Custa nada perto de geometria e muda mais a sensacao de lugar do que geometria.
+Os atores de luz continuam no mapa e o `AHGameMode` so mexe nos valores deles: luz
+criada em tempo de execucao nao e capturada pela sky light como uma colocada e.
+
+### O que continua assado no mapa
+
+So o que nao da para sortear: o chao, o volume de navegacao, o ponto de nascimento
+e os atores de luz. O `Build-Arena.py` encolheu de ~430 para ~360 linhas.
+
+### Medir antes de posicionar, de novo
+
+Ladrilhar uma cerca sem vao nem sobreposicao exige saber o comprimento real do
+painel, e isso e fato do asset, nao constante. O `AHGameMode` passa ao gerador uma
+funcao de medicao que le `UStaticMesh::GetBounds()` — sem precisar criar nada — e
+guarda a resposta, porque a mesma cerca e consultada dezenas de vezes seguidas.
+Depois que a peca existe, raio e topo sao regravados com os limites medidos, entao
+a conta de cobertura roda contra o que esta de pe.
+
+### Dois erros de desenho pegos antes de compilar
+
+Auditando os pontos de colocacao achei que em **Ruinas** um muro de pedra podia
+atravessar o corredor entre os nascimentos e lacrar o encontro, e que em **Terreiro**
+o deck podia cair em cima do inimigo. A correcao nao foi remendar cada arquetipo: o
+teste do corredor virou uma funcao unica (`InLane`) pela qual passa toda colocacao
+dentro da arena, e coisas grandes usam `ClearSpot`, que so devolve lugar livre. O
+teste de automacao agora roda 400 sementes e exige que nenhuma peca solida caia no
+corredor nem sobre um nascimento, e que os quatro arquetipos apareçam.
+
+### `Height` virou `TopZ`
+
+`Height` queria dizer "altura acima da propria origem", mas a origem de um deck e o
+meio dele, entao origem + altura passava do topo pela metade. Dizer **onde o topo
+esta** tem um sentido so, e e justamente o numero que da para medir.
+
+## Camera que gira (2026-09-24)
+
+A camera era fixa em -48 de inclinacao e -45 de giro. Num jogo onde cobertura e
+linha de visao decidem a rolagem, nao conseguir olhar atras de uma casa nao e so
+desconforto: e informacao de regra escondida. E ficou pior quando a arena passou a
+ser sorteada, porque agora a casa pode nascer em qualquer lugar.
+
+- **A e D giram em passos de 45 graus.** Q e E ja sao ataque e conjurar, entao A e D
+  ficaram, que tambem sao os mais proximos da mao. Oito angulos bastam para ver
+  atras de qualquer coisa.
+- **Roda do mouse aproxima e afasta**, entre 12 e 36 m de distancia.
+
+Passos de 45 graus, e nao giro livre, de proposito: a leitura isometrica e o que
+deixa distancia julgavel de relance, e camera em angulo arbitrario tira isso em
+silencio. O giro e suavizado entre um passo e outro — corte seco de 45 graus perde
+a orientacao de quem esta olhando.
+
+O par angulo-atual/angulo-desejado volta para -180..180 junto, quando os dois ja
+coincidem, para uma sessao longa girando sempre para o mesmo lado nao acumular
+angulo grande. Dobrar os dois no mesmo quadro garante que nao ha nada para ver.
+
+**Ainda nao resolvido:** o braco da camera nao testa colisao, entao em certos
+angulos ela pode atravessar uma casa. Com o giro disponivel da para sair de la, e
+ligar o teste de colisao faria a camera saltar para perto sem aviso. Se incomodar,
+o certo e desbotar o que esta na frente, nao mover a camera.

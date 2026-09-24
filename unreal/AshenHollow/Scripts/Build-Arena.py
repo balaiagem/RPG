@@ -1,7 +1,12 @@
-"""Builds the village-square arena as its own map.
+"""Builds the stage the arena is played on, as its own map.
 
 Run through UnrealEditor-Cmd -run=pythonscript -script=<absolute path>, or via
 Scripts/Build-Arena.ps1.
+
+What this builds is only what cannot be rolled per encounter: the ground, the
+navigation bounds, the spawn point and the light actors. Houses, walls, braziers,
+stalls, the raised deck and the loose cover are generated at runtime by
+AHArena::Build, so no two encounters share a layout.
 
 Two decisions shape this file.
 
@@ -17,7 +22,6 @@ was wrong, and the guesses are never right the first time.
 
 Idempotent: re-running rebuilds the map from zero, so it is safe to iterate.
 """
-import math
 import unreal
 
 MAP      = '/Game/AshenHollow/Maps/ArenaVillage'
@@ -110,20 +114,6 @@ def scale_to(actor, size_x, size_y, size_z=None):
         scale.x * (size_x * 0.5) / max(extent.x, 0.01),
         scale.y * (size_y * 0.5) / max(extent.y, 0.01),
         scale.z if size_z is None else scale.z * (size_z * 0.5) / max(extent.z, 0.01)))
-
-def push_outside(actor, axis, sign, limit):
-    """Slide the actor outward until the face nearest the centre sits at limit."""
-    origin, extent = measure(actor)
-    location = actor.get_actor_location()
-    here   = getattr(origin, axis)
-    reach  = getattr(extent, axis)
-    delta  = (sign * limit) - (here - sign * reach)
-    actor.set_actor_location(
-        unreal.Vector(location.x + (delta if axis == 'x' else 0.0),
-                      location.y + (delta if axis == 'y' else 0.0),
-                      location.z), False, False)
-
-# ── Spawning ─────────────────────────────────────────────────────────────────
 
 def blueprint_class(path):
     """The spawnable class behind a Blueprint asset, by whichever API exists."""
@@ -219,69 +209,6 @@ def dress(actor, material=None, collide=True):
         except Exception as error:                               # noqa: BLE001
             note('set_collision_profile_name (%s)' % error)
 
-def fence_run(path, x0, y0, x1, y1, label):
-    """Tile a fence piece from one point to another, however long the piece is."""
-    source = asset(path)
-    if source is None:
-        return
-    probe = place(path, 0.0, 0.0, -50000.0, ground=False)
-    if probe is None:
-        note('fence probe failed')
-        return
-    _, extent = measure(probe)
-    along_x = extent.x >= extent.y
-    piece   = 2.0 * (extent.x if along_x else extent.y)
-    actors.destroy_actor(probe)
-    if piece < 1.0:
-        note('fence piece measured as zero length')
-        return
-    span  = math.hypot(x1 - x0, y1 - y0)
-    count = max(1, int(round(span / piece)))
-    angle = math.degrees(math.atan2(y1 - y0, x1 - x0))
-    # Turn the piece so its long side runs along the line, whichever axis that is.
-    yaw   = angle if along_x else angle - 90.0
-    for index in range(count):
-        t = (index + 0.5) / count
-        place(path, x0 + (x1 - x0) * t, y0 + (y1 - y0) * t, 0.0, yaw,
-              label='%s_%d' % (label, index))
-
-# ── Start from an empty level ────────────────────────────────────────────────
-SOURCE = '/Game/AshenHollow/Maps/Courtyard'
-if not unreal.EditorAssetLibrary.does_asset_exist(MAP):
-    # Copy the grey-box map and empty it, rather than asking for a brand new
-    # level. Duplicating an asset is dependable when the editor runs headless as
-    # a commandlet, and it leaves Courtyard itself untouched either way.
-    if not unreal.EditorAssetLibrary.does_asset_exist(SOURCE):
-        raise RuntimeError('Courtyard nao existe; nao ha mapa base para copiar.')
-    unreal.EditorAssetLibrary.duplicate_asset(SOURCE, MAP)
-levels.load_level(MAP)
-for existing in actors.get_all_level_actors():
-    try:
-        actors.destroy_actor(existing)
-    except Exception:                                            # noqa: BLE001
-        pass            # world settings and the default brush cannot be destroyed
-
-# ── Ground ───────────────────────────────────────────────────────────────────
-# The ground reaches far past the fight. The playable square is only the middle
-# of it; houses, fences, braziers and trees all stand outside that square, and
-# without ground under them they would hang over the void.
-#
-# Three layers, each doing one job. A single solid slab carries collision, and
-# therefore the navmesh, so walkable ground is one unbroken surface with no tile
-# seams for Recast to trip over. On top of it, two grids of planes are pure
-# paint: each plane gets the material's full 0-1 UV, so stone tiles at a
-# believable size instead of being stretched fifty metres across one cube. The
-# tighter, paler grid marks the square you actually fight on.
-GROUND_HALF = 3400.0
-stone  = asset(PACK + '/materials/MI_stonebrick_01')
-ground = asset(PACK + '/materials/MI_landscape') or asset(PACK + '/materials/MI_stonebrick_02')
-
-slab = place('/Engine/BasicShapes/Cube', 0.0, 0.0, 0.0, label='Arena Ground', ground=False)
-if slab:
-    scale_to(slab, 2.0 * GROUND_HALF, 2.0 * GROUND_HALF, 60.0)
-    align_top(slab, 0.0)
-    dress(slab, ground, collide=True)
-
 def paving(material, half, tile, skip_half, tag, lift=1.0):
     steps = int(round(2.0 * half / tile))
     for ix in range(steps):
@@ -297,138 +224,70 @@ def paving(material, half, tile, skip_half, tag, lift=1.0):
                 slate.set_actor_location(unreal.Vector(px, py, lift), False, False)
                 dress(slate, material, collide=False)
 
+# ── Start from an empty level ────────────────────────────────────────────────
+SOURCE = '/Game/AshenHollow/Maps/Courtyard'
+if not unreal.EditorAssetLibrary.does_asset_exist(MAP):
+    # Copy the grey-box map and empty it, rather than asking for a brand new
+    # level. Duplicating an asset is dependable when the editor runs headless as
+    # a commandlet, and it leaves Courtyard itself untouched either way.
+    if not unreal.EditorAssetLibrary.does_asset_exist(SOURCE):
+        raise RuntimeError('Courtyard nao existe; nao ha mapa base para copiar.')
+    unreal.EditorAssetLibrary.duplicate_asset(SOURCE, MAP)
+levels.load_level(MAP)
+
+# Some actors in a level are not the level's to delete -- world settings, the
+# default brush, the navigation data the engine maintains itself. Asking anyway
+# does no harm to the map, but each refusal is logged as an Error, and a
+# commandlet returns the number of errors it logged. Dozens of harmless refusals
+# therefore came back as a failed build on a map that had built perfectly.
+PERMANENT = tuple(Kind for Kind in (getattr(unreal, Name, None) for Name in (
+    'WorldSettings', 'Brush', 'AbstractNavData', 'NavigationData',
+    'DefaultPhysicsVolume', 'WorldDataLayers', 'LevelBounds', 'GameModeBase',
+)) if Kind is not None)
+
+for existing in actors.get_all_level_actors():
+    if isinstance(existing, PERMANENT):
+        continue
+    try:
+        actors.destroy_actor(existing)
+    except Exception:                                            # noqa: BLE001
+        pass
+
+# ── Ground ───────────────────────────────────────────────────────────────────
+# The ground reaches far past the fight, because the houses, fences and trees the
+# game spawns at runtime all stand outside the playable square and would otherwise
+# hang over the void.
+#
+# Three layers, each doing one job. A single solid slab carries collision, and
+# therefore the navmesh, so walkable ground is one unbroken surface with no tile
+# seams for Recast to trip over. On top of it, two grids of planes are pure paint:
+# each plane gets the material's full 0-1 UV, so stone tiles at a believable size
+# instead of being stretched sixty-eight metres across one cube. The tighter,
+# paler grid marks the square you actually fight on.
+GROUND_HALF = 3400.0
+stone  = asset(PACK + '/materials/MI_stonebrick_01')
+ground = asset(PACK + '/materials/MI_landscape') or asset(PACK + '/materials/MI_stonebrick_02')
+
+slab = place('/Engine/BasicShapes/Cube', 0.0, 0.0, 0.0, label='Arena Ground', ground=False)
+if slab:
+    scale_to(slab, 2.0 * GROUND_HALF, 2.0 * GROUND_HALF, 60.0)
+    align_top(slab, 0.0)
+    dress(slab, ground, collide=True)
+
 paving(stone,  HALF,        300.0, 0.0,  'Paving')
 paving(ground, GROUND_HALF, 600.0, HALF, 'Outskirt', lift=0.5)
 
-# ── The square's walls: houses on four sides, fences closing the gaps ─────────
-HOUSES = [
-    (PACK + '/blueprints/buildings/BP_BLD_house_2',  'y',  1.0, 180.0, -260.0),
-    (PACK + '/blueprints/buildings/BP_BLD_house_7',  'y',  1.0, 180.0,  420.0),
-    (PACK + '/blueprints/buildings/BP_BLD_house_5',  'y', -1.0,   0.0,  260.0),
-    (PACK + '/blueprints/buildings/BP_BLD_house_11', 'y', -1.0,   0.0, -430.0),
-    (PACK + '/blueprints/buildings/BP_BLD_house_3',  'x',  1.0, 270.0,  120.0),
-    (PACK + '/blueprints/buildings/BP_BLD_house_9',  'x', -1.0,  90.0, -160.0),
-]
-for path, axis, sign, yaw, offset in HOUSES:
-    x = sign * (RING + 500.0) if axis == 'x' else offset
-    y = sign * (RING + 500.0) if axis == 'y' else offset
-    house = place(path, x, y, 0.0, yaw, label='House_' + path.rsplit('_', 1)[-1])
-    if house:
-        # However wide this particular house turns out to be, its inner wall ends
-        # up on the same line as every other one.
-        push_outside(house, axis, sign, RING + 120.0)
-        seat, span = measure(house)
-        unreal.log_warning('AH_ARENA_HOUSE %s at %.0f,%.0f size %.0f x %.0f x %.0f'
-                   % (house.get_actor_label(), seat.x, seat.y, 2*span.x, 2*span.y, 2*span.z))
-
-FENCE = PACK + '/meshes/props/construction/SM_PROP_fence_v01_01'
-EDGE  = RING + 90.0
-fence_run(FENCE, -EDGE, -EDGE,  EDGE, -EDGE, 'Fence_S')
-fence_run(FENCE, -EDGE,  EDGE,  EDGE,  EDGE, 'Fence_N')
-fence_run(FENCE, -EDGE, -EDGE, -EDGE,  EDGE, 'Fence_W')
-fence_run(FENCE,  EDGE, -EDGE,  EDGE,  EDGE, 'Fence_E')
-
-# ── Corner braziers ──────────────────────────────────────────────────────────
-# Just outside the playable square: they light the fight and frame it without
-# becoming four obstacles to path around.
-for cx, cy in ((-RING, -RING), (RING, -RING), (-RING, RING), (RING, RING)):
-    place(PACK + '/blueprints/props/BP_PROP_brazier_01', cx, cy, 0.0,
-          label='Brazier_%d_%d' % (cx, cy))
-    lamp = actors.spawn_actor_from_class(unreal.PointLight, unreal.Vector(cx, cy, 190.0))
-    if lamp:
-        lamp.set_actor_label('BrazierLight_%d_%d' % (cx, cy))
-        glow = component(lamp, ['point_light_component', 'light_component'])
-        if glow:
-            setp(glow, 'mobility', unreal.ComponentMobility.MOVABLE)
-            setp(glow, 'intensity_units', unreal.LightUnits.LUMENS)
-            setp(glow, 'intensity', 1600.0)
-            setp(glow, 'attenuation_radius', 1100.0)
-            setp(glow, 'light_color', unreal.Color(255, 176, 96, 255))
-            setp(glow, 'cast_shadows', False)
-            setp(glow, 'volumetric_scattering_intensity', 1.4)
-
-# ── The raised deck ──────────────────────────────────────────────────────────
-# High ground has to exist somewhere for the rule to mean anything. One deck,
-# off to one side and clear of the line between the spawns, reached by two ramps
-# shallow enough for Recast to walk up (about 21 degrees, well under the 44 the
-# agent allows).
+# ── Everything else is built at runtime ──────────────────────────────────────
+# Houses, walls, braziers, market stalls, carts, trees, the raised deck and its
+# ramp, and the loose cover are all rolled per encounter by AHArena::Build and
+# spawned by AHGameMode::BuildArena. They deliberately do not live in the map.
 #
-# These numbers are mirrored in AHArena.h as DeckCentreX / DeckKeepOut / DeckTop,
-# which is how the runtime prop generator knows not to bury a barrel inside the
-# deck. Change them here and change them there.
-DECK_X, DECK_HALF_X, DECK_HALF_Y, DECK_TOP = 780.0, 260.0, 380.0, 130.0
-
-deck = place('/Engine/BasicShapes/Cube', DECK_X, 0.0, 0.0, label='High Ground', ground=False)
-if deck:
-    scale_to(deck, 2.0 * DECK_HALF_X, 2.0 * DECK_HALF_Y, DECK_TOP)
-    align_top(deck, DECK_TOP)
-    dress(deck, stone, collide=True)
-
-def ramp(tag, from_x, from_y, to_x, to_y, width):
-    """
-    A sloped slab bridging the floor and the deck.
-
-    Scaled square first and rotated second: get_actor_bounds reports an
-    axis-aligned box, so measuring a slab that is already tilted would size it
-    against its shadow rather than against itself.
-    """
-    run  = math.hypot(to_x - from_x, to_y - from_y)
-    slab = place('/Engine/BasicShapes/Cube', 0.0, 0.0, 0.0, label=tag, ground=False)
-    if not slab:
-        return
-    scale_to(slab, math.hypot(run, DECK_TOP), width, 34.0)
-    slab.set_actor_rotation(unreal.Rotator(
-        roll=0.0,
-        pitch=math.degrees(math.atan2(DECK_TOP, run)),
-        yaw=math.degrees(math.atan2(to_y - from_y, to_x - from_x))), False)
-    # Sunk slightly, so the ramp overlaps floor and deck instead of leaving a
-    # lip at either end for a character to catch on.
-    slab.set_actor_location(unreal.Vector((from_x + to_x) * .5, (from_y + to_y) * .5,
-                                          DECK_TOP * .5 - 22.0), False, False)
-    dress(slab, stone, collide=True)
-
-ramp('Ramp_West',  DECK_X - DECK_HALF_X - 380.0, 0.0,    DECK_X - DECK_HALF_X, 0.0,    300.0)
-ramp('Ramp_North', DECK_X, DECK_HALF_Y + 380.0,          DECK_X, DECK_HALF_Y,          280.0)
-
-# ── Cover inside the square ──────────────────────────────────────────────────
-# Nothing here any more. The obstacles are rolled at runtime by AHArena::Generate
-# and spawned by AHGameMode::BuildArena, so every encounter gets a fresh layout
-# and the map itself stays the permanent shell: ground, walls, deck, lighting.
-
-# ── Dressing outside the fight ───────────────────────────────────────────────
-place(PACK + '/blueprints/props/BP_PROP_well',        -RING - 260.0,  120.0, 0.0,  30.0, label='Well')
-place(PACK + '/meshes/props/vehicles/SM_PROP_cart_02', RING + 300.0, -420.0, 0.0, 200.0, label='Cart_Idle')
-place(PACK + '/meshes/props/construction/SM_PROP_market_v01_01', 180.0, RING + 240.0, 0.0, 180.0, label='Market')
-place(PACK + '/blueprints/props/BP_PROP_campfire_01', RING + 260.0,  520.0, 0.0, 0.0, label='Campfire')
-
-for index, (lx, ly) in enumerate(((-RING - 60.0, -520.0), (RING + 60.0, 480.0))):
-    place(PACK + '/meshes/props/light/SM_PROP_streetlamp_v01_01', lx, ly, 0.0, 0.0,
-          label='Streetlamp_%d' % index)
-
-for index, (tx, ty) in enumerate(((-1750.0, -1500.0), (1850.0, -1250.0), (-1600.0, 1700.0),
-                                  (1700.0, 1650.0), (300.0, -2000.0), (-400.0, 2050.0))):
-    tree = place(PACK + '/meshes/environment/SM_ENV_TREE_village_LOD0', tx, ty, 0.0,
-                 (index * 63) % 360, label='Tree_%d' % index)
-    if tree:
-        tree.set_actor_scale3d(unreal.Vector(1.0 + .12 * ((index % 3) - 1),
-                                             1.0 + .12 * ((index % 3) - 1),
-                                             1.0 + .18 * ((index % 2) - .5)))
-        sit_on_ground(tree, 0.0)
-
-# Grass hugging the paving edge, purely to soften the line where stone stops.
-for index in range(24):
-    angle = (index / 24.0) * math.tau
-    gx, gy = math.cos(angle) * (HALF + 40.0), math.sin(angle) * (HALF + 40.0)
-    grass = place(PACK + '/meshes/environment/SM_ENV_PLANT_grass_village', gx, gy, 0.0,
-                  (index * 37) % 360, label='Grass_%d' % index)
-    if grass:
-        dress(grass, None, collide=False)
-
-for index, (fx, fy, fyaw) in enumerate(((-RING - 30.0, 300.0, 90.0), (RING + 30.0, -100.0, 270.0))):
-    banner = place(PACK + '/meshes/props/deco/SM_PROP_flag_01', fx, fy, 0.0, fyaw,
-                   label='Banner_%d' % index)
-    if banner:
-        dress(banner, None, collide=False)
+# What stays baked is only what cannot be rolled: the ground everyone walks on,
+# the navigation bounds, the spawn point, and the light actors themselves. The
+# lights stay because a light spawned at runtime cannot be captured by the sky
+# light the way a placed one can -- the game mode reaches in and changes their
+# angle, temperature and intensity per seed instead, so each arena has its own
+# hour of the day.
 
 # ── Navigation ───────────────────────────────────────────────────────────────
 # Spawn first, measure, then scale to the size we actually want. The volume's
@@ -534,6 +393,26 @@ if grade:
     graded('ambient_occlusion_intensity', 0.6)
     graded('ambient_occlusion_radius', 120.0)
     grade.set_editor_property('settings', settings)
+
+# ── Nothing here is baked ────────────────────────────────────────────────────
+# Not a single light in this project is static, so no primitive should be
+# claiming it wants a lightmap. One actor left on Static mobility is enough for
+# the editor to print "LIGHTING NEEDS TO BE REBUILT" across the screen in play,
+# and rebuilding would bake nothing useful -- the answer is to stop asking.
+DYNAMIC = 0
+for built in actors.get_all_level_actors():
+    try:
+        pieces = built.get_components_by_class(unreal.SceneComponent)
+    except Exception:                                            # noqa: BLE001
+        continue
+    for piece in pieces:
+        try:
+            if piece.get_editor_property('mobility') != unreal.ComponentMobility.MOVABLE:
+                piece.set_editor_property('mobility', unreal.ComponentMobility.MOVABLE)
+                DYNAMIC += 1
+        except Exception:                                        # noqa: BLE001
+            pass        # volumes and a few engine components have no mobility
+unreal.log_warning('AH_ARENA_DYNAMIC %d componentes trocados para movable' % DYNAMIC)
 
 # ── Save ─────────────────────────────────────────────────────────────────────
 levels.save_current_level()

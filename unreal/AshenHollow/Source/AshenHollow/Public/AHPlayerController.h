@@ -14,6 +14,12 @@ class ASHENHOLLOW_API AAHPlayerController : public APlayerController
 public:
     FString PerformanceLabel=TEXT("EQUILIBRADO / F6");
     void CyclePerformance();
+    // Camera. A and D because Q and E are already attack and cast, and the wheel
+    // because nothing else uses it.
+    void RotateCameraLeft();
+    void RotateCameraRight();
+    void ZoomCameraIn();
+    void ZoomCameraOut();
     void ApplyPerformance();
     int32 PerformanceProfile=1;
     AAHPlayerController();

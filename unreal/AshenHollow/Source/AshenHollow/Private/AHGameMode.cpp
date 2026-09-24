@@ -6,6 +6,16 @@
 #include "Engine/StaticMeshActor.h"
 #include "Engine/StaticMesh.h"
 #include "Components/StaticMeshComponent.h"
+#include "Components/SceneComponent.h"
+#include "Engine/DirectionalLight.h"
+#include "Engine/SkyLight.h"
+#include "Engine/PointLight.h"
+#include "Components/DirectionalLightComponent.h"
+#include "Components/SkyLightComponent.h"
+#include "Components/PointLightComponent.h"
+#include "Materials/MaterialInterface.h"
+#include "Misc/Paths.h"
+#include "EngineUtils.h"
 #include "GameFramework/CharacterMovementComponent.h"
 const FVector AAHGameMode::HeroSpawn(0.f, -500.f, 110.f);
 const FVector AAHGameMode::FoeSpawn (0.f,  500.f, 110.f);
@@ -21,44 +31,149 @@ void AAHGameMode::BuildArena(int32 Seed)
     for (auto& Old : ObstacleActors) if (IsValid(Old)) Old->Destroy();
     ObstacleActors.Reset();
 
+    // Measure the meshes the generator is about to arrange. A fence can only be
+    // tiled without gaps or overlaps by someone who knows how long a panel is,
+    // and that is a fact about the asset, not a constant worth guessing. Asking
+    // the mesh for its bounds is cheap and needs nothing spawned; the answers are
+    // cached because the same fence is asked about dozens of times in a row.
+    TMap<FString, FVector> Measured;
+    auto MeasureMesh = [&Measured](const FString& Path) -> FVector
+    {
+        if (const FVector* Known = Measured.Find(Path)) return *Known;
+        FVector Extent(100.0, 100.0, 100.0);
+        if (const UStaticMesh* Mesh = LoadObject<UStaticMesh>(nullptr, *Path, nullptr, LOAD_NoWarn | LOAD_Quiet))
+            Extent = Mesh->GetBounds().BoxExtent;
+        Measured.Add(Path, Extent);
+        return Extent;
+    };
+
     FRandomStream Dice(Seed);
-    Obstacles = AHArena::Generate(Dice, HeroSpawn, FoeSpawn);
+    Plan = AHArena::Build(Dice, HeroSpawn, FoeSpawn, MeasureMesh);
 
     FActorSpawnParameters Params;
     Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
-    for (FAHArenaPiece& Piece : Obstacles)
-    {
-        UStaticMesh* Mesh = LoadObject<UStaticMesh>(nullptr, *Piece.MeshPath, nullptr, LOAD_NoWarn|LOAD_Quiet);
-        if (!Mesh) continue;
-        auto* Prop = GetWorld()->SpawnActor<AStaticMeshActor>(Piece.Location, FRotator(0.f, Piece.Yaw, 0.f), Params);
-        if (!Prop) continue;
-        auto* Body = Prop->GetStaticMeshComponent();
-        if (Body)
-        {
-            // Movable before anything else: a Static actor spawned at runtime
-            // refuses to be moved or scaled afterwards.
-            Body->SetMobility(EComponentMobility::Movable);
-            Body->SetStaticMesh(Mesh);
-        }
-        Prop->SetActorScale3D(FVector(Piece.Scale));
 
-        // Measured, never assumed. The generator's radius and height are only
-        // spacing estimates; the cover rule runs against the prop's real bounds,
-        // and the prop is dropped so its base rests on the flagstones.
+    for (FAHArenaPiece& Piece : Plan.Pieces)
+    {
+        AActor* Built = nullptr;
+
+        if (Piece.MeshPath.Contains(TEXT("/blueprints/")))
+        {
+            // A blueprint spawns by its generated class. Going through the editor's
+            // actor factories instead would return nothing outside the editor.
+            const FString ClassPath = Piece.MeshPath + TEXT(".") +
+                                      FPaths::GetCleanFilename(Piece.MeshPath) + TEXT("_C");
+            if (UClass* Made = LoadClass<AActor>(nullptr, *ClassPath, nullptr, LOAD_NoWarn | LOAD_Quiet))
+                Built = GetWorld()->SpawnActor<AActor>(Made, Piece.Location, Piece.Rotation, Params);
+        }
+        else if (UStaticMesh* Mesh = LoadObject<UStaticMesh>(nullptr, *Piece.MeshPath, nullptr, LOAD_NoWarn | LOAD_Quiet))
+        {
+            auto* Prop = GetWorld()->SpawnActor<AStaticMeshActor>(Piece.Location, Piece.Rotation, Params);
+            if (Prop)
+            {
+                if (auto* Body = Prop->GetStaticMeshComponent())
+                {
+                    // Movable before anything else: a Static actor spawned at
+                    // runtime refuses to be moved or scaled afterwards.
+                    Body->SetMobility(EComponentMobility::Movable);
+                    Body->SetStaticMesh(Mesh);
+                    if (!Piece.MaterialPath.IsEmpty())
+                        if (UMaterialInterface* Skin = LoadObject<UMaterialInterface>(
+                                nullptr, *Piece.MaterialPath, nullptr, LOAD_NoWarn | LOAD_Quiet))
+                            Body->SetMaterial(0, Skin);
+                }
+                Built = Prop;
+            }
+        }
+
+        if (!Built) continue;
+
+        // Everything spawned here must be fully dynamic.
+        //
+        // The village pack's blueprints are authored for a baked level, so their
+        // meshes and lights arrive on Static or Stationary mobility. Spawned
+        // after load that is wrong twice over: the level starts asking to have
+        // its lighting rebuilt -- the message on screen -- and a static
+        // primitive created at runtime cannot be lit properly anyway, because
+        // the lightmap it expects was never baked and never will be.
+        //
+        // Sweeping every scene component rather than only the meshes: a brazier
+        // blueprint carries its own light, and a stationary light is the louder
+        // half of the same complaint.
+        TArray<USceneComponent*> Parts;
+        Built->GetComponents(Parts);
+        for (USceneComponent* Part : Parts)
+            if (Part && Part->Mobility != EComponentMobility::Movable)
+                Part->SetMobility(EComponentMobility::Movable);
+
+        Built->SetActorScale3D(Piece.Scale);
+
         FVector Origin, Extent;
-        Prop->GetActorBounds(false, Origin, Extent);
-        Piece.Radius = static_cast<float>(FMath::Max(Extent.X, Extent.Y));
-        Piece.Height = static_cast<float>(Extent.Z * 2.0);
-        Prop->SetActorLocation(FVector(Piece.Location.X, Piece.Location.Y,
-                                       Piece.Location.Z - (Origin.Z - Extent.Z)));
-        ObstacleActors.Add(Prop);
+        Built->GetActorBounds(false, Origin, Extent);
+        if (Piece.bSitOnGround)
+        {
+            Built->SetActorLocation(FVector(Piece.Location.X, Piece.Location.Y,
+                                            Piece.Location.Z - (Origin.Z - Extent.Z)));
+            Built->GetActorBounds(false, Origin, Extent);
+        }
+        if (Piece.bCover)
+        {
+            // Measured, never assumed. The generator's numbers were spacing
+            // estimates; the cover rule runs against what is actually standing there.
+            Piece.Radius = static_cast<float>(FMath::Max(Extent.X, Extent.Y));
+            Piece.TopZ   = static_cast<float>(Origin.Z + Extent.Z);
+        }
+        ObstacleActors.Add(Built);
+
+        if (Piece.bLight)
+        {
+            if (auto* Glow = GetWorld()->SpawnActor<APointLight>(
+                    Piece.Location + FVector(0.f, 0.f, 170.f), FRotator::ZeroRotator, Params))
+            {
+                if (auto* Lamp = Cast<UPointLightComponent>(Glow->GetLightComponent()))
+                {
+                    Lamp->SetMobility(EComponentMobility::Movable);
+                    Lamp->SetIntensityUnits(ELightUnits::Lumens);
+                    Lamp->SetIntensity(1600.f);
+                    Lamp->SetAttenuationRadius(1100.f);
+                    Lamp->SetLightColor(FLinearColor(1.f, .62f, .33f));
+                    Lamp->SetCastShadows(false);
+                }
+                ObstacleActors.Add(Glow);
+            }
+        }
     }
-    UE_LOG(LogTemp, Display, TEXT("AH_ARENA semente %d, %d obstaculos"), Seed, ObstacleActors.Num());
+
+    ApplyArenaLight();
+    UE_LOG(LogTemp, Display, TEXT("AH_ARENA %s semente %d, %d pecas"),
+           *Plan.Name, Seed, ObstacleActors.Num());
+}
+
+void AAHGameMode::ApplyArenaLight()
+{
+    // The hour of the day is part of the roll. The light actors themselves stay
+    // baked in the map -- only their settings move -- because a light spawned at
+    // runtime cannot be captured by the sky light the way a placed one can.
+    for (TActorIterator<ADirectionalLight> It(GetWorld()); It; ++It)
+    {
+        It->SetActorRotation(FRotator(Plan.SunPitch, Plan.SunYaw, 0.f));
+        if (auto* Key = It->GetLightComponent())
+        {
+            Key->SetMobility(EComponentMobility::Movable);
+            Key->SetTemperature(Plan.SunTemperature);
+        }
+    }
+    for (TActorIterator<ASkyLight> It(GetWorld()); It; ++It)
+        if (auto* Fill = It->GetLightComponent())
+        {
+            Fill->SetMobility(EComponentMobility::Movable);
+            Fill->SetIntensity(Plan.SkyIntensity);
+        }
 }
 
 EAHCover AAHGameMode::CoverBetween(const FVector& From, const FVector& To) const
 {
-    return AHArena::CoverBetween(Obstacles, From, To);
+    return AHArena::CoverBetween(Plan.Pieces, From, To);
 }
 
 AAHGameMode::AAHGameMode()

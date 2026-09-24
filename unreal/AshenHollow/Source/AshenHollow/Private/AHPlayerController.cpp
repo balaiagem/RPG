@@ -68,6 +68,10 @@ void AAHPlayerController::SetupInputComponent()
     Bind(EKeys::X, &AAHPlayerController::DisengageAction);
     Bind(EKeys::T, &AAHPlayerController::BreathAction);
     Bind(EKeys::F6, &AAHPlayerController::CyclePerformance);
+    Bind(EKeys::A, &AAHPlayerController::RotateCameraLeft);
+    Bind(EKeys::D, &AAHPlayerController::RotateCameraRight);
+    Bind(EKeys::MouseScrollUp,   &AAHPlayerController::ZoomCameraIn);
+    Bind(EKeys::MouseScrollDown, &AAHPlayerController::ZoomCameraOut);
     if (auto* Subsystem = ULocalPlayer::GetSubsystem<UEnhancedInputLocalPlayerSubsystem>(GetLocalPlayer()))
     {
         Subsystem->AddMappingContext(Mapping, 0);
@@ -197,6 +201,10 @@ void AAHPlayerController::DisengageAction()
     StopMovement();
     if (auto* Hero = Cast<AAHCharacter>(GetPawn())) Hero->Disengage();
 }
+void AAHPlayerController::RotateCameraLeft()  { if(auto* Hero=Cast<AAHCharacter>(GetPawn())) Hero->RotateCamera(-45.f); }
+void AAHPlayerController::RotateCameraRight() { if(auto* Hero=Cast<AAHCharacter>(GetPawn())) Hero->RotateCamera( 45.f); }
+void AAHPlayerController::ZoomCameraIn()      { if(auto* Hero=Cast<AAHCharacter>(GetPawn())) Hero->ZoomCamera(-1.f); }
+void AAHPlayerController::ZoomCameraOut()     { if(auto* Hero=Cast<AAHCharacter>(GetPawn())) Hero->ZoomCamera( 1.f); }
 void AAHPlayerController::CyclePerformance() { PerformanceProfile=(PerformanceProfile+1)%3; ApplyPerformance(); }
 void AAHPlayerController::ApplyPerformance()
 {
