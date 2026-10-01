@@ -13,8 +13,14 @@ void AAHCharacter::InitializeSpellbook()
     for(int32 I=0;I<AHSpells::Count();++I)
     {
         const auto& S=AHSpells::Get(static_cast<EAHSpell>(I));
-        if(AHSpells::ForClass(S.Id,HeroClass) && IsSpellAvailable(S.Id) && S.Rank==1 && PreparedSpells.Num()<PreparedLimit()) PreparedSpells.Add(S.Id);
+        // The Shield is deliberately not in here: it is a reaction, it is always
+        // available, and it must not eat one of the four preparation slots.
+        if(AHSpells::ForClass(S.Id,HeroClass) && IsSpellAvailable(S.Id) && S.Rank==1
+           && S.Id!=EAHSpell::Shield
+           && !PreparedSpells.Contains(S.Id) && PreparedSpells.Num()<PreparedLimit()) PreparedSpells.Add(S.Id);
     }
+    // Foes resolve spells through this same path and have no idea what a
+    // reaction is, so they never carry the Shield; the player picks it or not.
     SelectedSpell=(HeroClass==EAHHeroClass::Cleric || HeroClass==EAHHeroClass::Paladin)?EAHSpell::CureWounds:HeroClass==EAHHeroClass::Ranger?EAHSpell::HuntersMark:EAHSpell::MagicMissile;
 }
 bool AAHCharacter::IsSpellAvailable(EAHSpell Id) const
@@ -25,7 +31,11 @@ bool AAHCharacter::IsSpellAvailable(EAHSpell Id) const
 }
 bool AAHCharacter::TogglePreparedSpell(EAHSpell Id)
 {
-    if(!bPreparingSpells || !IsSpellAvailable(Id) || AHSpells::Get(Id).Rank==0) return false;
+    // Cantrips and the Shield are not preparation decisions, so they cannot be
+    // toggled off by a stray click in the book -- which is how the Shield left
+    // somebody's repertoire once already.
+    if(!bPreparingSpells || !IsSpellAvailable(Id) || AHSpells::Get(Id).Rank==0
+       || Id==EAHSpell::Shield) return false;
     if(PreparedSpells.Contains(Id)) { PreparedSpells.Remove(Id); return true; }
     if(PreparedSpells.Num()>=PreparedLimit()) { Feedback=TEXT("Limite de preparacao: remova uma magia primeiro"); return false; }
     PreparedSpells.Add(Id); return true;
@@ -44,6 +54,23 @@ bool AAHCharacter::HasGuidingMark() const
 bool AAHCharacter::CastSpell(EAHSpell Id, AAHCharacter* Target)
 {
     if(!CanAct() || bPreparingSpells || !IsSpellAvailable(Id)) return false;
+
+    // The Shield is not cast here; this only turns the question on and off.
+    // A reaction is answered when the attack lands, so the slot and the reaction
+    // are spent by RaiseShield, after the game has asked and you said yes.
+    if(Id==EAHSpell::Shield)
+    {
+        // It teaches, it does not toggle.
+        //
+        // This used to flip a flag, and the flag started ON -- so the one
+        // discoverable thing a player could do with the spell (select it, press
+        // E) SILENCED it. Following my own instructions was enough to turn the
+        // feature off, which is how it spent three builds never firing.
+        Feedback=TEXT("Escudo arcano e uma REACAO: nao se conjura no seu turno. O jogo pergunta quando um golpe for acertar.");
+        AddLog(Feedback);
+        return true;
+    }
+
     const auto& S=AHSpells::Get(Id);
     if(S.Rank>0 && (!PreparedSpells.Contains(Id) || SelectedSpellLevel<S.Rank || !HasSpellSlot()))
     { Feedback=TEXT("Magia nao preparada ou espaco indisponivel no circulo escolhido"); return false; }
@@ -91,6 +118,10 @@ bool AAHCharacter::CastSpell(EAHSpell Id, AAHCharacter* Target)
     if(Id==EAHSpell::CureWounds || Id==EAHSpell::HealingWord)
     {
         int32 Amount=3; for(int32 I=0;I<Rank;++I) Amount+=Dice.RandRange(1,Id==EAHSpell::CureWounds?8:4);
+        // Life Domain, Disciple of Life: every healing spell carries a little
+        // more. It is the cleric's level-1 domain feature and it is why the
+        // class is the one you want when the valley has been unkind.
+        if(HeroClass==EAHHeroClass::Cleric) { Amount+=2+Rank; AddLog(TEXT("Discipulo da Vida: +2 +circulo")); }
         Amount=ApplyHealing(Amount);
         ImpactText=FString::Printf(TEXT("+%d PV"),Amount); ImpactTextTime=GetWorld()->GetTimeSeconds(); bImpactHealing=true;
     }
@@ -112,6 +143,9 @@ void AAHCharacter::ResolveSpellImpact()
     auto* Target=PendingTarget.Get(); PendingTarget=nullptr;
     if(!IsAlive() || !IsValid(Target) || !Target->IsAlive()) return;
     const auto& S=AHSpells::Get(Id);
+    // Evocation, Potent Cantrip (wizard, level 2). The sorcerer borrows the
+    // wizard's spell list but has its own origin, so it does not get this.
+    const bool bPotentCantrip = HeroClass==EAHHeroClass::Wizard && Level>=2 && S.Rank==0;
     FHitResult Hit; FCollisionQueryParams Query(SCENE_QUERY_STAT(SpellImpact),false,this); Query.AddIgnoredActor(Target);
     if(FVector::Dist2D(GetActorLocation(),Target->GetActorLocation())>S.Range || GetWorld()->LineTraceSingleByChannel(Hit,GetActorLocation(),Target->GetActorLocation(),ECC_Visibility,Query))
     { AddLog(TEXT("Magia interrompida: alvo fora de alcance ou obstruido")); return; }
@@ -135,7 +169,10 @@ void AAHCharacter::ResolveSpellImpact()
             FHitResult Block; FCollisionQueryParams Q(SCENE_QUERY_STAT(SpellArea),false,this); Q.AddIgnoredActor(Victim);
             if(GetWorld()->LineTraceSingleByChannel(Block,GetActorLocation(),Victim->GetActorLocation(),ECC_Visibility,Q)) continue;
             const int32 Modifier=Id==EAHSpell::BurningHands?AHRules::Class(Victim->HeroClass).InitiativeBonus:2;
-            auto Save=UAHDiceRules::RollCheck(Dice,Modifier+(Victim->BlessTurns>0?Dice.RandRange(1,4):0),SpellSaveDC(),Id==EAHSpell::BurningHands && Victim->bDodging?1:0,Victim->IsLucky());
+            // Danger Sense (barbarian, level 2): advantage on Dexterity saves.
+            const bool bWary=Id==EAHSpell::BurningHands
+                          && Victim->HeroClass==EAHHeroClass::Barbarian && Victim->Level>=2;
+            auto Save=UAHDiceRules::RollCheck(Dice,Modifier+(Victim->BlessTurns>0?Dice.RandRange(1,4):0),SpellSaveDC(),((Id==EAHSpell::BurningHands && Victim->bDodging)||bWary)?1:0,Victim->IsLucky());
             Victim->ReceiveHit(Save.bSuccess?Damage/2:Damage,Id==EAHSpell::BurningHands?EAHDamageType::Fire:EAHDamageType::Thunder);
             TotalDamage+=Victim->LastDamage;
             if(Id==EAHSpell::Thunderwave && !Save.bSuccess && Victim->IsAlive())
@@ -152,8 +189,15 @@ void AAHCharacter::ResolveSpellImpact()
     {
         // Dexterity modifier is currently the archetype's initiative modifier,
         // excluding ancestry and feat bonuses.
-        auto Save=UAHDiceRules::RollCheck(Dice,AHRules::Class(Target->HeroClass).InitiativeBonus+(Target->BlessTurns>0?Dice.RandRange(1,4):0),SpellSaveDC(),Target->bDodging?1:0,Target->IsLucky());
+        const bool bWary=Target->HeroClass==EAHHeroClass::Barbarian && Target->Level>=2;
+        auto Save=UAHDiceRules::RollCheck(Dice,AHRules::Class(Target->HeroClass).InitiativeBonus+(Target->BlessTurns>0?Dice.RandRange(1,4):0),SpellSaveDC(),(Target->bDodging||bWary)?1:0,Target->IsLucky());
         if(!Save.bSuccess) { TotalDamage=SpellDamageDie(8,Rerolls); Target->ReceiveHit(TotalDamage,EAHDamageType::Radiant); }
+        else if(bPotentCantrip)
+        {
+            TotalDamage=FMath::Max(1,SpellDamageDie(8,Rerolls)/2);
+            Target->ReceiveHit(TotalDamage,EAHDamageType::Radiant);
+            AddLog(TEXT("Truque potente: metade do dano mesmo com a salvaguarda"));
+        }
         LastRoll=Save; LastRoll.Damage=TotalDamage; LastRollLabel=TEXT("ALVO / SALVAGUARDA DES"); LastRollTime=GetWorld()->GetTimeSeconds();
     }
     else
@@ -171,6 +215,14 @@ void AAHCharacter::ResolveSpellImpact()
             auto Roll=UAHDiceRules::RollAttack(Dice,SpellAttackBonus()+(BlessTurns>0?Dice.RandRange(1,4):0),Target->ArmorClass,0,Sides,0,(Advantage?1:0)-(Disadvantage?1:0),IsLucky());
             if(Roll.bSuccess) for(int32 D=0;D<Count*(Roll.bCritical?2:1);++D) Roll.Damage+=SpellDamageDie(Sides,Rerolls);
             Target->GuidingSource.Reset();
+            // Potent Cantrip: a cantrip that misses still singes.
+            if(!Roll.bSuccess && bPotentCantrip && S.Rank==0)
+            {
+                const int32 Half=FMath::Max(1,SpellDamageDie(Sides,Rerolls)/2);
+                Target->ReceiveHit(Half,Id==EAHSpell::RayOfFrost?EAHDamageType::Cold:EAHDamageType::Fire);
+                TotalDamage+=Target->LastDamage;
+                AddLog(FString::Printf(TEXT("Truque potente: %d de dano mesmo errando"),Half));
+            }
             if(Roll.bSuccess)
             {
                 Target->ReceiveHit(Roll.Damage,Id==EAHSpell::InflictWounds?EAHDamageType::Necrotic:Id==EAHSpell::GuidingBolt?EAHDamageType::Radiant:Id==EAHSpell::RayOfFrost?EAHDamageType::Cold:EAHDamageType::Fire);

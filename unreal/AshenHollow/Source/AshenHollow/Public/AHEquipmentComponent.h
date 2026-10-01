@@ -52,4 +52,5 @@ private:
     /** The original cube-and-cylinder weapon, kept as the fallback. */
     void BuildPrimitiveWeapon(EAHWeaponKind Kind);
     void BuildPrimitiveShield(USceneComponent* Parent);
+    void ConfigureArmor(EAHWeaponKind Kind);
 };

@@ -27,17 +27,22 @@ import unreal
 MAP      = '/Game/AshenHollow/Maps/ArenaVillage'
 PACK     = '/Game/Fantastic_Village_Pack'
 
-# The playable square, in centimetres from the centre. 26 x 26 m, with the two
-# spawns ten metres apart at (0,-500) and (0,+500) -- AHGameMode::HeroSpawn and
-# FoeSpawn hold the same two numbers and must agree with these.
+# The walkable world, in centimetres from the centre: 250 x 250 m, which is the
+# twenty-five-by-twenty-five grid of ten-metre cells the generator lays out.
 #
-# Ten metres is a deliberate compromise. A bigger square makes room to flank, to
-# fall back and to use range, but spawning the two sides at opposite ends would
-# spend two or three turns walking before anything happened, and a turn-based
-# fight cannot afford dead turns. Scenery stays outside RING so the navmesh is
-# still one clean square.
-HALF     = 1300.0
-RING     = 1360.0
+# It could grow this far because the props stopped being one actor each: a world
+# of 2,477 pieces uses 39 distinct meshes, so instanced it is forty components
+# whatever the size. The number that was keeping the valley small was measuring
+# the wrong thing.
+# AHArena.h holds the same number as PlayHalfSize and the two MUST agree -- the
+# generator places houses out to its own edge and the navmesh stops at this one.
+#
+# It is this big because the game has an exploring phase. A fight still happens
+# in a space about the size of the old arena -- the camp and the ring around it
+# -- but between fights you walk, and distance is what makes somewhere feel like
+# a place instead of a room.
+HALF     = 12500.0
+
 
 actors = unreal.get_editor_subsystem(unreal.EditorActorSubsystem)
 levels = unreal.get_editor_subsystem(unreal.LevelEditorSubsystem)
@@ -209,21 +214,6 @@ def dress(actor, material=None, collide=True):
         except Exception as error:                               # noqa: BLE001
             note('set_collision_profile_name (%s)' % error)
 
-def paving(material, half, tile, skip_half, tag, lift=1.0):
-    steps = int(round(2.0 * half / tile))
-    for ix in range(steps):
-        for iy in range(steps):
-            px = -half + tile * (ix + 0.5)
-            py = -half + tile * (iy + 0.5)
-            if skip_half and abs(px) < skip_half and abs(py) < skip_half:
-                continue        # the inner grid already covers this
-            slate = place('/Engine/BasicShapes/Plane', px, py, lift,
-                          label='%s_%d_%d' % (tag, ix, iy), ground=False)
-            if slate:
-                scale_to(slate, tile, tile)
-                slate.set_actor_location(unreal.Vector(px, py, lift), False, False)
-                dress(slate, material, collide=False)
-
 # ── Start from an empty level ────────────────────────────────────────────────
 SOURCE = '/Game/AshenHollow/Maps/Courtyard'
 if not unreal.EditorAssetLibrary.does_asset_exist(MAP):
@@ -254,19 +244,97 @@ for existing in actors.get_all_level_actors():
         pass
 
 # ── Ground ───────────────────────────────────────────────────────────────────
-# The ground reaches far past the fight, because the houses, fences and trees the
-# game spawns at runtime all stand outside the playable square and would otherwise
-# hang over the void.
+# One slab carries collision, and therefore the navmesh: walkable ground is a
+# single unbroken surface with no tile seams for Recast to trip over. On top of
+# it, one grid of planes is pure paint -- each plane gets the material's full
+# 0-1 UV, so the ground tiles at a believable size instead of being stretched a
+# hundred and twenty metres across one cube.
 #
-# Three layers, each doing one job. A single solid slab carries collision, and
-# therefore the navmesh, so walkable ground is one unbroken surface with no tile
-# seams for Recast to trip over. On top of it, two grids of planes are pure paint:
-# each plane gets the material's full 0-1 UV, so stone tiles at a believable size
-# instead of being stretched sixty-eight metres across one cube. The tighter,
-# paler grid marks the square you actually fight on.
-GROUND_HALF = 3400.0
-stone  = asset(PACK + '/materials/MI_stonebrick_01')
-ground = asset(PACK + '/materials/MI_landscape') or asset(PACK + '/materials/MI_stonebrick_02')
+# The ground runs well past the playable 130 x 130 m, because the rim of boulders
+# and the trees behind it stand outside the walkable square and would otherwise
+# hang over the void.
+GROUND_HALF = 16000.0
+# NOT MI_landscape. Its parent is M_Master_landscape, a terrain material, and a
+# terrain material on a static mesh renders black -- which is exactly what the
+# ground did. Every other MI_ in this pack sits on M_Master_opaque_normal, which
+# is an ordinary mesh material. Checking the parent takes one command and would
+# have saved a build.
+def instance(name, base_texture, normal_texture):
+    """A material instance of our own, built on the pack's ordinary opaque master.
+
+    The pack ships no grass material a static mesh can use -- MI_landscape is a
+    terrain material and renders BLACK on one, which is exactly what the ground
+    did once already. But it ships the terrain textures and an ordinary opaque
+    master, and an instance of one with the other is two calls' work.
+
+    Worth doing rather than settling for stone: the roads the generator lays are
+    paving stone, and paving stone on a stone field is not a road, it is a
+    slightly different grey. Green ground is what makes the network readable.
+    """
+    path = '/Game/AshenHollow/Materials/' + name
+    if unreal.EditorAssetLibrary.does_asset_exist(path):
+        return asset(path)
+    parent = asset(PACK + '/materials/master_materials/M_Master_opaque_normal')
+    if parent is None or base_texture is None:
+        return None
+    try:
+        made = unreal.AssetToolsHelpers.get_asset_tools().create_asset(
+            name, '/Game/AshenHollow/Materials', unreal.MaterialInstanceConstant,
+            unreal.MaterialInstanceConstantFactoryNew())
+    except Exception as error:                                   # noqa: BLE001
+        note('create %s (%s)' % (name, error))
+        return None
+    if made is None:
+        note('create %s returned nothing' % name)
+        return None
+    try:
+        unreal.MaterialEditingLibrary.set_material_instance_parent(made, parent)
+    except Exception as error:                                   # noqa: BLE001
+        note('parent %s (%s)' % (name, error))
+        return None
+    # Ask the master what its parameters are called rather than trusting a name
+    # typed from memory. A wrong parameter name fails silently -- the instance
+    # is created, it just shows the master's default texture -- and silent is
+    # the one failure mode worth spending three lines to rule out.
+    try:
+        names = [str(found) for found in
+                 unreal.MaterialEditingLibrary.get_texture_parameter_names(parent)]
+    except Exception:                                            # noqa: BLE001
+        names = ['Base Color Texture', 'Normal Texture']
+
+    def wire(want, texture):
+        if texture is None:
+            return False
+        for candidate in names:
+            if want in candidate.lower().replace('_', ' '):
+                try:
+                    unreal.MaterialEditingLibrary.set_material_instance_texture_parameter_value(
+                        made, candidate, texture)
+                    return True
+                except Exception as error:                       # noqa: BLE001
+                    note('set %s on %s (%s)' % (candidate, name, error))
+                    return False
+        note('no "%s" parameter on the master; it has %s' % (want, names))
+        return False
+
+    if not wire('base color', base_texture):
+        return None
+    wire('normal', normal_texture)
+    try:
+        unreal.MaterialEditingLibrary.update_material_instance(made)
+    except Exception:                                            # noqa: BLE001
+        pass
+    unreal.EditorAssetLibrary.save_asset(path)
+    return made
+
+grass = instance('MI_AH_grass',
+                 asset(PACK + '/textures/T_ENV_TERRAIN_grass_01_BC'),
+                 asset(PACK + '/textures/T_ENV_TERRAIN_grass_01_N'))
+ground = (grass
+          or asset(PACK + '/materials/MI_ENV_stone')
+          or asset(PACK + '/materials/MI_stonebrick_02')
+          or asset(PACK + '/materials/MI_stonebrick_01'))
+unreal.log_warning('AH_ARENA_GROUND %s' % ('grama' if grass else 'pedra (a grama falhou)'))
 
 slab = place('/Engine/BasicShapes/Cube', 0.0, 0.0, 0.0, label='Arena Ground', ground=False)
 if slab:
@@ -274,8 +342,22 @@ if slab:
     align_top(slab, 0.0)
     dress(slab, ground, collide=True)
 
-paving(stone,  HALF,        300.0, 0.0,  'Paving')
-paving(ground, GROUND_HALF, 600.0, HALF, 'Outskirt', lift=0.5)
+def paving(material, half, tile, tag, lift=1.0):
+    steps = int(round(2.0 * half / tile))
+    for ix in range(steps):
+        for iy in range(steps):
+            px = -half + tile * (ix + 0.5)
+            py = -half + tile * (iy + 0.5)
+            slate = place('/Engine/BasicShapes/Plane', px, py, lift,
+                          label='%s_%d_%d' % (tag, ix, iy), ground=False)
+            if slate:
+                scale_to(slate, tile, tile)
+                slate.set_actor_location(unreal.Vector(px, py, lift), False, False)
+                dress(slate, material, collide=False)
+
+# 20 m tiles: 256 planes again. The ground grew from 200 m to 320 m across, so
+# the tile grew with it rather than the actor count.
+paving(ground, GROUND_HALF, 2000.0, 'Ground')
 
 # ── Everything else is built at runtime ──────────────────────────────────────
 # Houses, walls, braziers, market stalls, carts, trees, the raised deck and its
@@ -305,7 +387,10 @@ if nav:
 else:
     note('NavMeshBoundsVolume failed to spawn')
 
-start = actors.spawn_actor_from_class(unreal.PlayerStart, unreal.Vector(0.0, -500.0, 110.0),
+# The middle of the bottom row of cells, standing on the main road. This has to
+# be the same point as AAHGameMode::HeroSpawn and AHArena::CellCentre of the
+# arrival cell: the generator keeps that spot clear, and the pawn appears here.
+start = actors.spawn_actor_from_class(unreal.PlayerStart, unreal.Vector(0.0, -12000.0, 110.0),
                                       unreal.Rotator(roll=0.0, pitch=0.0, yaw=90.0))
 if start:
     start.set_actor_label('Hero Spawn')

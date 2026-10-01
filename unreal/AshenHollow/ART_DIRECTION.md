@@ -340,3 +340,43 @@ nao ha nada para assar. A resposta e parar de pedir.
 - `Build-Arena.py` faz a mesma varredura no mapa antes de salvar, e registra quantos
   componentes trocou (`AH_ARENA_DYNAMIC`), para que "nenhum" seja uma resposta
   visivel e nao uma suposicao.
+
+### O chao preto, e uma reserva que protegia da coisa errada
+
+O chao inteiro saiu preto porque estava com `MI_landscape`, cujo material pai e
+`M_Master_landscape` — material de **terreno**. Terreno nao renderiza numa malha
+estatica. Todo outro MI_ do pacote sente-se em `M_Master_opaque_normal`, que e
+material comum de malha. Conferir o pai leva um comando.
+
+O pior nao e o erro: e que eu **previ esse risco em voz alta** algumas horas antes
+("MI_landscape pode ser material de camada de terreno e sair cinza ou preto numa
+malha estatica"), escrevi uma reserva e seguri em frente. Mas a reserva era
+
+    ground = asset('MI_landscape') or asset('MI_stonebrick_02')
+
+que so troca se o asset **nao carregar**. O `MI_landscape` carrega perfeitamente —
+ele so nao serve. Reserva que testa a condicao errada nao e reserva; e a aparencia
+de uma. Quando eu disser "se der errado eu troco", vale perguntar como eu pretendo
+saber que deu errado.
+
+Agora e `MI_ENV_stone`, com `MI_stonebrick_02` e `_01` atras.
+
+### Dava para andar mas nao para ver ate onde
+
+A navegacao ja parava o jogador na borda, mas parede invisivel le como bug. O
+gerador agora fecha o vale com um anel de **64 pedregulhos** em escala 2,6 a 4,8,
+com arvores atras deles. Cercar cem metros de nada custaria trezentos paineis de
+cerca para dizer a mesma coisa pior.
+
+O anel fica fora do quadrado jogavel e nao entra na conta de cobertura: ele esta ali
+para ser olhado e esbarrado, nao para dar +2 de CA a ninguem.
+
+### O mundo dobrou, e a caminhada acompanhou
+
+De 60x60 m para **100x100 m**. Junto veio uma coisa que sozinha teria estragado o
+aumento: enquanto explora, o heroi anda a 1000 em vez de 480. Mundo maior que demora
+mais para atravessar e so um mundo mais lento, que nao e o que ninguem pediu.
+
+E um teto de **14 inimigos** por vale. Cada um e uma malha com esqueleto, instancia
+de animacao e equipamento; um vale maior sorteando mais acampamentos viraria trinta
+deles numa placa de 6 GB sem ninguem decidir isso.

@@ -2,6 +2,7 @@
 #include "AHCharacter.h"
 #include "AHPlayerController.h"
 #include "AHGameMode.h"
+#include "AHVillager.h"
 #include "Engine/Canvas.h"
 #include "Engine/Engine.h"
 #include "EngineUtils.h"
@@ -11,6 +12,7 @@
 #include "Misc/Paths.h"
 #include "HAL/FileManager.h"
 #include "Fonts/CompositeFont.h"
+#include "Camera/PlayerCameraManager.h"
 
 // ════════════════════════════════════════════════════════════════════════════
 // PALETTE
@@ -427,14 +429,27 @@ void AAHCombatHUD::DrawRoundBanner(float Age,int32 Round)
 // HIT-BOX CALLBACKS
 // ════════════════════════════════════════════════════════════════════════════
 void AAHCombatHUD::NotifyHitBoxClick(FName N)
-{ if(auto* PC=Cast<AAHPlayerController>(GetOwningPlayerController())) PC->CombatCommand(N); }
+{
+    auto* PC=Cast<AAHPlayerController>(GetOwningPlayerController());
+    if(!PC) return;
+    const FString Name=N.ToString();
+    if(PC->bSheetOpen && (Name.StartsWith(TEXT("PackCell")) || Name.StartsWith(TEXT("GearSlot"))))
+    {
+        DragSource=N; PC->GetMousePosition(DragStart.X,DragStart.Y);
+        if(Name.StartsWith(TEXT("PackCell"))) SelectedPack=FCString::Atoi(*Name.Mid(8));
+        return;
+    }
+    PC->CombatCommand(N);
+}
+void AAHCombatHUD::NotifyHitBoxRelease(FName) { ReleaseInventoryDrag(); }
 void AAHCombatHUD::NotifyHitBoxBeginCursorOver(FName N) { HoveredBox=N; }
 void AAHCombatHUD::NotifyHitBoxEndCursorOver(FName N)   { if(HoveredBox==N) HoveredBox=NAME_None; }
 bool AAHCombatHUD::IsPointerOverInterface() const
 {
+    if(const auto* PC=Cast<AAHPlayerController>(GetOwningPlayerController()); PC && PC->bSheetOpen) return true;
     float X,Y; if(!GetOwningPlayerController()->GetMousePosition(X,Y)) return false;
     X=(X-OffsetX)/Scale; Y=(Y-OffsetY)/Scale;
-    return Y>730||(Y<120&&X>525&&X<1100)||(X>1250&&Y>185&&Y<480);
+    return Y>730||(Y<120&&X>525&&X<1100)||(X>1250&&Y>40&&Y<480);
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -471,6 +486,246 @@ void AAHCombatHUD::DrawDie(float X,float Y,float Radius,float Angle,FLinearColor
 // ════════════════════════════════════════════════════════════════════════════
 // DRAW HUD
 // ════════════════════════════════════════════════════════════════════════════
+/**
+ * The minimap.
+ *
+ * WHAT CHANGED AND WHY. The old one drew the whole kilometre at 1.8 px a cell:
+ * a 180-pixel square in which the island was always fully visible and nothing
+ * on it was ever legible. Lucas asked for something closer to Baldur's Gate,
+ * and what BG3 actually does is the opposite of what that map did -- it is
+ * LOCAL. You see the street you are standing in, the buildings around you and
+ * the ground you are about to walk over, and anything important that is off
+ * the edge is pinned to the rim with an arrow so it still tells you which way
+ * to go.
+ *
+ * So: a round map, 130 m of ground around the player, turning with the camera,
+ * with a proper frame and compass. What is not in view is not lost -- the
+ * dungeons, the errand and any fight you have started ride the rim.
+ *
+ * THE THREE THINGS THAT WERE ALREADY RIGHT AND ARE KEPT. North is world +X and
+ * it goes UP; the transform is written down ONCE and every mark goes through
+ * it (the version before last spelled it out three times and one of them
+ * always drifted); and the terrain is INVERSE-sampled -- a screen cell asks
+ * which world cell it is over -- because drawing rotated world cells leaves
+ * gaps between them.
+ */
+void AAHCombatHUD::DrawMinimap(const AAHGameMode* Arena, const AAHCharacter* Hero,
+                               const AAHPlayerController* PC, float Now)
+{
+    if(!Arena || !Hero || !PC) return;
+
+    // Where and how big, and how much ground it shows.
+    const float CX = 1462.f, CY = 176.f, R = 112.f;
+    // A hundred and thirty metres of ground to a hundred and twelve pixels.
+    // Close enough to read a village, wide enough that the next landmark is
+    // usually on the map rather than on the rim.
+    const float Reach = 13000.f;
+    const float PxPerCm = R / Reach;
+
+    const float MapYaw = PlayerOwner && PlayerOwner->PlayerCameraManager
+        ? PlayerOwner->PlayerCameraManager->GetCameraRotation().Yaw : 0.f;
+    const float MapSin = FMath::Sin(FMath::DegreesToRadians(MapYaw));
+    const float MapCos = FMath::Cos(FMath::DegreesToRadians(MapYaw));
+    const FVector Eye = Hero->GetActorLocation();
+
+    // World to map, said once. Dx is north, Dy is east, both in centimetres.
+    auto MapAt = [&](const FVector& Spot, float& OutX, float& OutY)
+    {
+        const float Dx = static_cast<float>(Spot.X - Eye.X);
+        const float Dy = static_cast<float>(Spot.Y - Eye.Y);
+        OutX = CX + (-MapSin * Dx + MapCos * Dy) * PxPerCm;
+        OutY = CY - ( MapCos * Dx + MapSin * Dy) * PxPerCm;
+    };
+
+    // ── The disc and its ground ─────────────────────────────────────────
+    DrawFilledCircle(CX, CY, R + 7.f, FLinearColor(.02f,.02f,.03f,.92f),
+                     FLinearColor(0,0,0,0), 0.f);
+
+    // Inverse sampling: every screen cell asks the world what it is standing
+    // over. Two pixels a step, which is the same number of samples the old
+    // full-island map took and looks continuous at this size.
+    const float Step = 2.f;
+    for(float Sy = -R; Sy <= R; Sy += Step)
+        for(float Sx = -R; Sx <= R; Sx += Step)
+        {
+            if(Sx*Sx + Sy*Sy > R*R) continue;
+            // The inverse of MapAt. Derived rather than guessed: the forward
+            // matrix is [-sin cos; -cos -sin], whose determinant is one, so
+            // the inverse is [-sin -cos; cos -sin].
+            const float Dx = (-MapSin * Sx - MapCos * Sy) / PxPerCm;
+            const float Dy = ( MapCos * Sx - MapSin * Sy) / PxPerCm;
+            const FVector Ground(Eye.X + Dx, Eye.Y + Dy, 0.0);
+            int32 Cx = 0, Cy = 0;
+            AHArena::CellOf(Ground, Cx, Cy);
+            if(!AHArena::InGrid(Cx, Cy))
+            {
+                DrawRect(FLinearColor(.05f,.05f,.06f,1.f),
+                         OffsetX+(CX+Sx)*Scale,OffsetY+(CY+Sy)*Scale,Step*Scale,Step*Scale);
+                continue;
+            }
+            const float Here  = Arena->Plan.GroundAt(Ground);
+            const float North = Arena->Plan.GroundAt(Ground + FVector(400,0,0));
+            const float East  = Arena->Plan.GroundAt(Ground + FVector(0,400,0));
+            FLinearColor Tint = FMath::Lerp(FLinearColor(.14f,.26f,.15f,1),
+                FLinearColor(.58f,.52f,.40f,1), FMath::Clamp(Here/4200.f,0.f,1.f));
+            switch(Arena->Plan.At(Cx,Cy))
+            {
+                case EAHCell::Road:    Tint=FLinearColor(.63f,.57f,.44f,1.f); break;
+                case EAHCell::Plaza:   Tint=FLinearColor(.72f,.62f,.36f,1.f); break;
+                case EAHCell::Village: Tint=FLinearColor(.60f,.33f,.19f,1.f); break;
+                case EAHCell::Wood:    Tint=FLinearColor(.11f,.22f,.13f,1.f); break;
+                case EAHCell::Field:   Tint=FLinearColor(.40f,.36f,.17f,1.f); break;
+                case EAHCell::Ruins:   Tint=FLinearColor(.32f,.31f,.34f,1.f); break;
+                case EAHCell::Quarry:  Tint=FLinearColor(.27f,.25f,.23f,1.f); break;
+                case EAHCell::Water:   Tint=FLinearColor(.11f,.30f,.46f,1.f); break;
+                case EAHCell::Bridge:  Tint=FLinearColor(.70f,.54f,.31f,1.f); break;
+                default: break;
+            }
+            // Relief, from the slope towards the sun. Three lookups a sample
+            // and it is what stops the map reading as coloured paper.
+            const float Lit = FMath::Clamp(1.f + ((Here-North) + (Here-East))/420.f, .62f, 1.34f);
+            Tint *= Lit; Tint.A = 1.f;
+            DrawRect(Tint,OffsetX+(CX+Sx)*Scale,OffsetY+(CY+Sy)*Scale,Step*Scale,Step*Scale);
+        }
+
+    // ── Marks ───────────────────────────────────────────────────────────
+    /**
+     * Anything off the edge is pinned to the rim rather than dropped.
+     *
+     * This is the single thing that makes a local map usable: the dungeon you
+     * are walking to leaves the view after ten seconds, and a map that simply
+     * forgets it is a map that stops answering the only question you are
+     * asking it.
+     */
+    auto Pin = [&](const FVector& Spot, FLinearColor Tone, float Size, bool bRim) -> bool
+    {
+        float Px = 0.f, Py = 0.f;
+        MapAt(Spot, Px, Py);
+        const float Ox = Px - CX, Oy = Py - CY;
+        const float Away = FMath::Sqrt(Ox*Ox + Oy*Oy);
+        if(Away > R - 4.f)
+        {
+            if(!bRim) return false;
+            const float Kx = Ox / FMath::Max(Away, .001f), Ky = Oy / FMath::Max(Away, .001f);
+            Px = CX + Kx * (R - 6.f);
+            Py = CY + Ky * (R - 6.f);
+            // A wedge pointing out, so a pinned mark cannot be mistaken for
+            // something that is actually there.
+            DrawLine(OffsetX+(Px+Kx*6.f)*Scale, OffsetY+(Py+Ky*6.f)*Scale,
+                     OffsetX+(Px-Ky*4.f)*Scale, OffsetY+(Py+Kx*4.f)*Scale, Tone, 2.f*Scale);
+            DrawLine(OffsetX+(Px+Kx*6.f)*Scale, OffsetY+(Py+Ky*6.f)*Scale,
+                     OffsetX+(Px+Ky*4.f)*Scale, OffsetY+(Py-Kx*4.f)*Scale, Tone, 2.f*Scale);
+            Size *= .75f;
+        }
+        DrawFilledCircle(Px, Py, Size, Tone, FLinearColor(.02f,.02f,.03f,.9f), 1.2f);
+        return true;
+    };
+
+    for(const FAHLandmark& Mark : Arena->Plan.Landmarks)
+    {
+        FLinearColor Tone; float Size = 2.6f; bool bRim = false;
+        switch(Mark.Kind)
+        {
+            case EAHSite::Masmorra:   Tone=FLinearColor(.92f,.42f,.86f,1.f); Size=4.6f; bRim=true; break;
+            case EAHSite::Forte:      Tone=AHUI::Gold;                        Size=4.2f; bRim=true; break;
+            case EAHSite::Ruina:      Tone=FLinearColor(.66f,.62f,.70f,1.f); break;
+            case EAHSite::Circulo:    Tone=FLinearColor(.48f,.72f,.82f,1.f); break;
+            case EAHSite::Cemiterio:  Tone=FLinearColor(.58f,.52f,.62f,1.f); break;
+            case EAHSite::Lenhadores: Tone=FLinearColor(.52f,.74f,.38f,1.f); break;
+            case EAHSite::Pedreira:   Tone=FLinearColor(.72f,.70f,.62f,1.f); break;
+            default:                  Tone=FLinearColor(.80f,.66f,.40f,1.f); break;
+        }
+        Pin(Mark.Where, Tone, Size, bRim);
+    }
+    // Only the camps that are awake are drawn as solid threats; the rest are
+    // rumours, and a map that shows every fight in the valley at full strength
+    // is a map that makes the whole island look occupied.
+    for(const FAHCamp& Camp : Arena->Camps)
+    {
+        if(Camp.bCleared) continue;
+        Pin(Camp.Centre, Camp.bAwake ? AHUI::Red
+                                     : FLinearColor(AHUI::Red.R*.55f,AHUI::Red.G*.4f,AHUI::Red.B*.4f,.85f),
+            Camp.bAwake ? 3.2f : 2.2f, false);
+    }
+    // The people, so a village reads as inhabited on the map too.
+    for(const auto& Quest:Arena->SideQuests)
+    {
+        if(Quest.Stage==3) continue;
+        Pin(Quest.Stage==1?Quest.Target:Quest.Giver,
+            Quest.Stage==0?AHUI::Teal:Quest.Stage==1?AHUI::Gold:AHUI::Green,
+            Quest.Stage==0?3.f:4.5f,Quest.Stage>0);
+    }
+    for(const TObjectPtr<AAHVillager>& Who : Arena->Folk)
+        if(IsValid(Who)) Pin(Who->GetActorLocation(), AHUI::Green, 1.8f, false);
+
+    /**
+     * The errand, pinned and pulsing.
+     *
+     * The one mark on this map that is an instruction rather than information,
+     * so it is the one mark that is allowed to move: it breathes, and it rides
+     * the rim when it is out of view.
+     */
+    if(Arena->Plan.Errand.bValid && Arena->ErrandStage < 3)
+    {
+        const FVector Goal = Arena->ErrandStage == 1
+            ? Arena->Plan.Errand.Prize : Arena->Plan.Errand.Giver;
+        const float Beat = 4.4f + 1.5f * FMath::Sin(Now * 3.2f);
+        Pin(Goal, AHUI::Bright, Beat, true);
+    }
+
+    // ── The player, and the frame ───────────────────────────────────────
+    // An arrow, always pointing up, because the map turns and he does not.
+    {
+        const float Tip = 7.5f, Wing = 5.0f;
+        const FVector2D A(OffsetX+CX*Scale, OffsetY+(CY-Tip)*Scale);
+        const FVector2D B(OffsetX+(CX-Wing)*Scale, OffsetY+(CY+Wing)*Scale);
+        const FVector2D C(OffsetX+(CX+Wing)*Scale, OffsetY+(CY+Wing)*Scale);
+        FCanvasTriangleItem Arrow(A, B, C, GWhiteTexture);
+        Arrow.SetColor(AHUI::Bright);
+        Canvas->DrawItem(Arrow);
+        DrawLine(A.X,A.Y,B.X,B.Y,FLinearColor(.02f,.02f,.03f,1.f),1.4f*Scale);
+        DrawLine(A.X,A.Y,C.X,C.Y,FLinearColor(.02f,.02f,.03f,1.f),1.4f*Scale);
+    }
+
+    // Two rings and eight ticks: the frame is most of what makes a circle of
+    // coloured pixels read as an instrument rather than as a stain.
+    auto Ring = [&](float Radius, FLinearColor Tone, float Thick)
+    {
+        const int32 Sides = 64;
+        for(int32 I=0;I<Sides;++I)
+        {
+            const float A0=I*2.f*PI/Sides, A1=(I+1)*2.f*PI/Sides;
+            DrawLine(OffsetX+(CX+Radius*FMath::Cos(A0))*Scale,OffsetY+(CY+Radius*FMath::Sin(A0))*Scale,
+                     OffsetX+(CX+Radius*FMath::Cos(A1))*Scale,OffsetY+(CY+Radius*FMath::Sin(A1))*Scale,
+                     Tone,Thick*Scale);
+        }
+    };
+    Ring(R + 1.f, AHUI::Gold, 2.2f);
+    Ring(R + 6.f, FLinearColor(AHUI::Gold.R*.45f,AHUI::Gold.G*.45f,AHUI::Gold.B*.45f,1.f), 1.4f);
+    for(int32 Tick=0;Tick<8;++Tick)
+    {
+        const float A = Tick * PI / 4.f;
+        DrawLine(OffsetX+(CX+(R+1.f)*FMath::Cos(A))*Scale,OffsetY+(CY+(R+1.f)*FMath::Sin(A))*Scale,
+                 OffsetX+(CX+(R+6.f)*FMath::Cos(A))*Scale,OffsetY+(CY+(R+6.f)*FMath::Sin(A))*Scale,
+                 AHUI::Gold, (Tick%2 ? 1.2f : 2.4f)*Scale);
+    }
+    // The compass, turning with the map. N is world +X, and it has to agree
+    // with the HUD's own compass points or one of the two is lying.
+    static const TCHAR* const Cardinals[4] = { TEXT("N"), TEXT("L"), TEXT("S"), TEXT("O") };
+    for(int32 Point=0;Point<4;++Point)
+    {
+        // North is up when the camera looks along +X; each quarter turn round.
+        const float Dx = (Point==0) ? 1.f : (Point==2) ? -1.f : 0.f;
+        const float Dy = (Point==1) ? 1.f : (Point==3) ? -1.f : 0.f;
+        const float Lx = CX + (-MapSin*Dx + MapCos*Dy) * (R + 15.f);
+        const float Ly = CY - ( MapCos*Dx + MapSin*Dy) * (R + 15.f) - 7.f;
+        Label(Cardinals[Point], Lx, Ly, .62f,
+              Point==0 ? AHUI::Bright : AHUI::Dim, true, Point==0);
+    }
+    // And what the ring is worth, because a map with no scale is a picture.
+    Label(TEXT("130 m"), CX, CY + R + 14.f, .52f, AHUI::Dim, true);
+}
+
 void AAHCombatHUD::DrawHUD()
 {
     Super::DrawHUD();
@@ -489,24 +744,51 @@ void AAHCombatHUD::DrawHUD()
     {
         DrawRect(FLinearColor(0,0,0,.7f),OffsetX,OffsetY,1600*Scale,900*Scale);
         Panel(470,290,660,250,true);
-        Label(TEXT("ATAQUE DE OPORTUNIDADE"),800,320,1.4f,AHUI::Gold,true);
-        Label(TEXT("O inimigo saiu do alcance. Gastar sua reacao?"),800,365,.9f,AHUI::Text,true);
-        Button(TEXT("ReactYes"),TEXT("Y"),TEXT("ATACAR"),690,410,true);
-        Button(TEXT("ReactNo"),TEXT("N"),TEXT("PASSAR"),825,410,true);
+        const bool bShieldPrompt=PC->ReactionKind==EAHReaction::Shield;
+        Label(bShieldPrompt?TEXT("ESCUDO ARCANO"):TEXT("ATAQUE DE OPORTUNIDADE"),
+              800,320,1.4f,AHUI::Gold,true);
+        // Honest about whether it arrives in time. The Shield stands until your
+        // next turn either way, so "too late for this one" is still often the
+        // right call -- but the player has to be told which bargain they are
+        // being offered.
+        FString Question=TEXT("O inimigo saiu do alcance. Gastar sua reacao?");
+        bool bInTime=false;
+        if(bShieldPrompt)
+        {
+            const AAHCharacter* Striker=PC->PendingAttacker();
+            const int32 Total=Striker?Striker->HeldRoll.Total:0;
+            bInTime=Total<Hero->ArmorClass+5;
+            Question=bInTime
+                ? FString::Printf(TEXT("O golpe soma %d contra a sua CA %d. Com o escudo a CA vira %d e ele ERRA."),
+                                  Total,Hero->ArmorClass,Hero->ArmorClass+5)
+                : FString::Printf(TEXT("O golpe soma %d e ACERTA mesmo com o escudo. A CA so fica %d para o resto da rodada."),
+                                  Total,Hero->ArmorClass+5);
+        }
+        Label(Question,800,365,.9f,AHUI::Text,true);
+        // The answer's consequence goes on the button, not only in the sentence
+        // above it. Spending a slot and taking the hit anyway is a legitimate
+        // play -- being surprised by it is not.
+        Button(TEXT("ReactYes"),TEXT("Y"),
+               bShieldPrompt?(bInTime?TEXT("ERGUER / ERRA"):TEXT("ERGUER / TARDE")):TEXT("ATACAR"),690,410,true,.66f);
+        Button(TEXT("ReactNo"), TEXT("N"),bShieldPrompt?TEXT("ENCAIXAR"):TEXT("PASSAR"),825,410,true,.66f);
         return;
     }
     if(Hero->bCharacterReady && (Hero->bPreparingSpells || PC->bSpellbookOpen))
     {
         Panel(230,90,1140,740,true);
         Label(AAHCharacter::ClassName(Hero->HeroClass)+TEXT(" / MAGIAS"),800,118,1.7f,AHUI::Gold,true);
-        Label(Hero->bPreparingSpells?TEXT("Escolha seu repertorio. Truques disponiveis nao ocupam preparacao."):TEXT("Selecione uma magia preparada. E conjura no alvo sob o cursor ou mais proximo."),800,157,.85f,AHUI::Text,true);
+        Label(Hero->bPreparingSpells?TEXT("Escolha seu repertorio. Truques disponiveis nao ocupam preparacao."):TEXT("Selecione uma magia preparada. E conjura no alvo escolhido com o clique esquerdo."),800,157,.85f,AHUI::Text,true);
         Label(FString::Printf(TEXT("Preparadas: %d / %d | Espacos I: %d | II: %d | Circulo escolhido: %d"),Hero->PreparedSpells.Num(),Hero->PreparedLimit(),Hero->ClassCharges,Hero->SpellSlots2,Hero->SelectedSpellLevel),800,187,.85f,AHUI::Gold,true);
         int32 Row=0;
         for(int32 I=0;I<AHSpells::Count();++I)
         {
             const auto& S=AHSpells::Get(static_cast<EAHSpell>(I)); if(!AHSpells::ForClass(S.Id,Hero->HeroClass)) continue;
             const float Y=226+Row++*55.f;
-            const bool Available=Hero->IsSpellAvailable(S.Id),Prepared=S.Rank==0 || Hero->PreparedSpells.Contains(S.Id);
+            // The Shield reads as permanent, like a cantrip: it is a reaction,
+            // it never occupies one of the preparation slots, and it cannot be
+            // toggled off by clicking its row.
+            const bool Available=Hero->IsSpellAvailable(S.Id);
+            const bool Prepared=S.Rank==0 || S.Id==EAHSpell::Shield || Hero->PreparedSpells.Contains(S.Id);
             const FName Name(*FString::Printf(TEXT("Spell_%d"),I));
             Panel(260,Y,1080,50,Available && (HoveredBox==Name || Hero->SelectedSpell==S.Id));
             Label(Available?(Prepared?TEXT("[+] "):TEXT("[ ] ")):TEXT("[NV 3]"),274,Y+8,.75f,Prepared?AHUI::Gold:AHUI::Dim);
@@ -526,24 +808,66 @@ void AAHCombatHUD::DrawHUD()
         if(Hero->MaxSpellSlots(1)>0)
             Label(FString::Printf(TEXT("Espacos I: %d/%d II: %d/%d | circulo: %d"),Hero->ClassCharges,Hero->MaxSpellSlots(1),Hero->SpellSlots2,Hero->MaxSpellSlots(2),Hero->SelectedSpellLevel),35,220,.75f,AHUI::Text);
         if(AHRules::Class(Hero->HeroClass).bCaster) Button(TEXT("Spells"),TEXT("K"),TEXT("MAGIAS"),215,250,true,.65f);
-        if(Hero->Level>=2 && Hero->HeroClass!=EAHHeroClass::Cleric && Hero->HeroClass!=EAHHeroClass::Wizard) Button(TEXT("Feature"),TEXT(""),Hero->ProgressionAbilityName(),35,250,Ready,.65f);
+        if(Hero->Level>=2 && Hero->HeroClass!=EAHHeroClass::Wizard) Button(TEXT("Feature"),TEXT(""),Hero->ProgressionAbilityName(),35,250,Ready,.65f);
         if(Hero->MaxSpellSlots(2)>0) Button(TEXT("Slot"),TEXT(""),TEXT("CIRCULO"),315,250,Ready,.65f);
         if(Hero->HeroClass==EAHHeroClass::Sorcerer)
         {
             Label(FString::Printf(TEXT("Feiticaria: %d / %d | Potencializar: %s"),Hero->SorceryPoints,Hero->Level>=2?Hero->Level:0,Hero->bEmpowerNext?TEXT("SIM"):TEXT("NAO")),35,435,.7f,AHUI::Gold);
             if(Hero->Level>=3) Button(TEXT("Empower"),TEXT("1 PF"),TEXT("POTENCIA"),125,250,Ready,.65f);
         }
+        if(Hero->HeroClass==EAHHeroClass::Barbarian && Hero->Level>=3)
+            Button(TEXT("Frenzy"),TEXT("BONUS"),TEXT("FRENESI"),125,250,Ready&&Hero->bRaging&&Hero->Turn.bBonus);
         if(Hero->HeroClass==EAHHeroClass::Paladin)
         {
+            if(Hero->Level>=3)
+                Button(TEXT("Sacred"),TEXT("ACAO"),TEXT("ARMA SACRA"),315,250,Ready&&!Hero->bChannelUsed&&Hero->SacredTurns==0);
             Button(TEXT("Utility"),FString::FromInt(Hero->LayOnHands),TEXT("CURAR"),125,250,Ready);
             Label(Hero->bSmiteArmed?TEXT("Punicao armada: espaco I no acerto"):TEXT("Punicao desativada"),35,435,.7f,AHUI::Gold);
         }
-        if(Hero->HeroClass==EAHHeroClass::Rogue && Hero->Level>=3) Button(TEXT("Aim"),TEXT("BONUS"),TEXT("MIRA"),125,250,Ready);
+        if(Hero->HeroClass==EAHHeroClass::Rogue)
+        {
+            // Hiding is the rogue's only road to Sneak Attack in a party of one,
+            // so the button says whether it is open and, when it is not, why.
+            const FString Refusal=Hero->HideRefusal();
+            Button(TEXT("Hide"),Hero->Level>=2?TEXT("BONUS"):TEXT("ACAO"),TEXT("ESCONDER"),215,250,Ready&&Refusal.IsEmpty());
+            if(Hero->Level>=2) Button(TEXT("Aim"),TEXT("BONUS"),TEXT("MIRA"),125,250,Ready);
+            Label(Hero->bHidden?TEXT("ESCONDIDO: proximo ataque com vantagem e furtivo")
+                               :(Refusal.IsEmpty()?TEXT("Esconder-se: vantagem, e o ataque furtivo passa a valer")
+                                                  :*Refusal),
+                  35,435,.7f,Hero->bHidden?AHUI::Gold:AHUI::Dim);
+        }
         if(Hero->Goodberries>0) Button(TEXT("Berry"),FString::FromInt(Hero->Goodberries),TEXT("FRUTO"),405,250,Ready);
         if(!Hero->RacialAbilityName().IsEmpty())
             Button(TEXT("Breath"),TEXT("T"),Hero->RacialAbilityName(),35,336,Hero->CanUseRacialAbility(),.65f);
         if(Hero->MaxSpellSlots(1)>0) Label(Hero->ClassAbilityName(),35,465,.75f,AHUI::Gold);
-        if(Hero->GuardTurns>0) Label(FString::Printf(TEXT("Escudo +2 CA: %d turnos"),Hero->GuardTurns),35,340,.75f,AHUI::Gold);
+        // The subclass, named, whether or not it has arrived yet. A domain you
+        // cannot see is a domain you assume the game forgot.
+        {
+            const FAHSubclass& Path=AHRules::Subclass(Hero->HeroClass);
+            Label(Hero->HasSubclass()
+                    ? FString::Printf(TEXT("%s  -  %s"),Path.Name,Path.Detail)
+                    : FString::Printf(TEXT("Nivel %d: %s  (%s)"),Path.Level,Path.Name,Path.Detail),
+                  35,408,.70f,Hero->HasSubclass()?AHUI::Gold:AHUI::Dim);
+            if(Hero->SacredTurns>0)
+                Label(FString::Printf(TEXT("Arma sagrada: +2 para acertar por %d turnos"),Hero->SacredTurns),
+                      35,430,.70f,AHUI::Gold);
+        }
+        if(Hero->GuardTurns>0) Label(FString::Printf(TEXT("Escudo da fe +2 CA: %d turnos"),Hero->GuardTurns),35,340,.75f,AHUI::Gold);
+        // The arcane Shield: armed, standing, or out of reach. A reaction the
+        // player cannot see the state of is a reaction they will never trust.
+        // Always drawn for a class that HAS the Shield, never only when it is
+        // ready. The version that appeared solely once the spell was prepared
+        // hid the one state worth seeing: the state where it is not.
+        if(AHSpells::ForClass(EAHSpell::Shield,Hero->HeroClass))
+        {
+            const bool bUp=Hero->ShieldTurns>0;
+            const bool bReady=Hero->ClassCharges>0 && Hero->Turn.bReaction;
+            Label(bUp   ? TEXT("ESCUDO ARCANO DE PE: +5 CA ate o seu turno")
+                : Hero->ClassCharges<=0 ? TEXT("Escudo arcano sem espaco de 1o circulo")
+                : !Hero->Turn.bReaction ? TEXT("Escudo arcano: reacao ja gasta nesta rodada")
+                                        : TEXT("ESCUDO ARCANO PRONTO: o jogo pergunta a cada golpe que acertar"),
+                  35,490,.72f,bUp?AHUI::Teal:bReady?AHUI::Gold:AHUI::Dim);
+        }
     }
 
     // ── Detect events ────────────────────────────────────────────────────────
@@ -605,7 +929,7 @@ void AAHCombatHUD::DrawHUD()
         {
             Panel(200,140,1200,600,true);
             Label(TEXT("A S H E N   H O L L O W"),800,160,1.8f,AHUI::Bright,true,true);
-            Label(TEXT("1 / 2  ·  ESCOLHA SUA ANCESTRALIDADE"),800,210,1.f,AHUI::Gold,true);
+            Label(TEXT("1 / 4  ·  ESCOLHA SUA ANCESTRALIDADE"),800,210,1.f,AHUI::Gold,true);
             Label(TEXT("Traços iniciais do protótipo · modelos compartilhados"),800,245,.82f,AHUI::Dim,true);
             const int32 Total=AHRules::AncestryCount();
             const FGrid G=Layout(Total,1170.f,400.f,300.f,268.f,270.f);
@@ -632,9 +956,14 @@ void AAHCombatHUD::DrawHUD()
             return;
         }
 
+        // ═══════════════════════════════════════════════════════════════
+        // 2 / 4  ·  A CLASSE
+        // ═══════════════════════════════════════════════════════════════
+        if(!Hero->bClassPicked)
+        {
         Panel(200,140,1200,600,true);
         Label(TEXT("A S H E N   H O L L O W"),800,160,1.8f,AHUI::Bright,true,true);
-        Label(TEXT("2 / 2  ·  ESCOLHA SUA CLASSE"),800,198,1.f,AHUI::Gold,true);
+        Label(TEXT("2 / 4  ·  ESCOLHA SUA CLASSE"),800,198,1.f,AHUI::Gold,true);
         Label(AAHCharacter::AncestryName(Hero->Ancestry)+TEXT("  ·  ")+AAHCharacter::AncestryTrait(Hero->Ancestry),800,230,.80f,AHUI::Dim,true);
         const FAHAncestrySheet& Blood=AHRules::Ancestry(Hero->Ancestry);
         const int32 Total=AHRules::ClassCount();
@@ -664,12 +993,222 @@ void AAHCombatHUD::DrawHUD()
             DrawRect(FLinearColor(.18f,.10f,.03f,.85f),OffsetX+(P.X+G.W*.127f)*Scale,OffsetY+(P.Y+G.H*.845f)*Scale,G.W*.746f*Scale,G.H*.101f*Scale);
             DrawLine(OffsetX+(P.X+G.W*.127f)*Scale,OffsetY+(P.Y+G.H*.845f)*Scale,
                      OffsetX+(P.X+G.W*.873f)*Scale,OffsetY+(P.Y+G.H*.845f)*Scale,CC,.9f*Scale);
-            Label(TEXT("JOGAR"),Mid,P.Y+G.H*.863f,1.f*G.Unit,AHUI::Bright,true);
+            Label(TEXT("ESCOLHER"),Mid,P.Y+G.H*.863f,1.f*G.Unit,AHUI::Bright,true);
             AddHitBox(FVector2D(OffsetX+P.X*Scale,OffsetY+P.Y*Scale),FVector2D(G.W*Scale,G.H*Scale),Name,true,2);
         }
         Label(TEXT("VOLTAR: ANCESTRALIDADE"),800,FMath::Min(G.Bottom()+24.f,712.f),.88f,AHUI::Gold,true);
         AddHitBox(FVector2D(OffsetX+600*Scale,OffsetY+FMath::Min(G.Bottom()+8.f,696.f)*Scale),FVector2D(400*Scale,44*Scale),TEXT("BackAncestry"),true,2);
         return;
+        }
+
+        // ═══════════════════════════════════════════════════════════════
+        // 3 / 4  ·  OS PONTOS
+        // ═══════════════════════════════════════════════════════════════
+        /**
+         * Point buy, with the consequences on screen while you spend.
+         *
+         * The whole argument for point buy over a fixed array is that the
+         * choice is interesting, and it is only interesting if you can SEE
+         * what it buys. So the right half of this screen is the derived sheet
+         * -- armour class, hit points, attack, damage, spell DC -- recomputed
+         * from the same function the game uses, every frame, as the numbers
+         * move. Nobody has to know that Constitution gives hit points; they
+         * can watch it happen.
+         */
+        if(!Hero->bPointsDone)
+        {
+            const FAHClassSheet& Picked=AHRules::Class(Hero->HeroClass);
+            Panel(200,140,1200,600,true);
+            Label(TEXT("A S H E N   H O L L O W"),800,160,1.6f,AHUI::Bright,true,true);
+            Label(TEXT("3 / 4  ·  DISTRIBUA SEUS PONTOS"),800,200,1.f,AHUI::Gold,true);
+            Label(AAHCharacter::AncestryName(Hero->Ancestry)+TEXT("  ·  ")+FString(Picked.Name),
+                  800,228,.82f,AHUI::Dim,true);
+
+            const int32 Spent=AHSheet::Spent(Hero->Abilities);
+            const int32 Left =AHSheet::BuyBudget-Spent;
+            Label(FString::Printf(TEXT("PONTOS RESTANTES:  %d"),Left),
+                  460,262,1.15f,Left>0?AHUI::Bright:AHUI::Dim,true,true);
+
+            const FAHAbilities Shown=AHSheet::Total(Hero->Abilities,Hero->Ancestry);
+            const int32* Blood=AHSheet::AncestryBonus(Hero->Ancestry);
+            for(int32 A=0;A<static_cast<int32>(EAHAbility::Count);++A)
+            {
+                const auto Which=static_cast<EAHAbility>(A);
+                const float RowY=296.f+A*62.f;
+                const int32 Bought=Hero->Abilities.Score[A];
+                const int32 Mod=Shown.Mod(Which);
+
+                Label(AHSheet::Short(Which),250,RowY+8,1.15f,AHUI::Gold,false,true);
+                Label(AHSheet::Explains(Which),250,RowY+32,.60f,AHUI::Dim);
+
+                // The bought score, the ancestry's gift, and the total.
+                Label(FString::Printf(TEXT("%2d"),Bought),400,RowY+6,1.25f,AHUI::Text,true,true);
+                if(Blood[A]>0)
+                    Label(FString::Printf(TEXT("+%d"),Blood[A]),438,RowY+12,.80f,AHUI::Green,true);
+                Label(FString::Printf(TEXT("=  %2d"),Shown.Score[A]),500,RowY+6,1.25f,AHUI::Bright,true,true);
+                Label(FString::Printf(TEXT("(%+d)"),Mod),566,RowY+10,.95f,
+                      Mod>=0?AHUI::Teal:AHUI::Red,true);
+
+                // What the next point up would cost, so nobody has to know
+                // the price list by heart.
+                const int32 Next=AHSheet::BuyCost(Bought+1)-AHSheet::BuyCost(Bought);
+                const bool bCanUp  = Bought<AHSheet::BuyCeil  && Next<=Left;
+                const bool bCanDn  = Bought>AHSheet::BuyFloor;
+                const FName UpName(*FString::Printf(TEXT("Abil%dup"),A));
+                const FName DnName(*FString::Printf(TEXT("Abil%ddn"),A));
+
+                Panel(614,RowY-2,40,40,HoveredBox==DnName);
+                Label(TEXT("-"),634,RowY+4,1.3f,bCanDn?AHUI::Bright:AHUI::Dim,true,true);
+                if(bCanDn) AddHitBox(FVector2D(OffsetX+614*Scale,OffsetY+(RowY-2)*Scale),
+                                     FVector2D(40*Scale,40*Scale),DnName,true,2);
+                Panel(660,RowY-2,40,40,HoveredBox==UpName);
+                Label(TEXT("+"),680,RowY+4,1.3f,bCanUp?AHUI::Bright:AHUI::Dim,true,true);
+                if(bCanUp) AddHitBox(FVector2D(OffsetX+660*Scale,OffsetY+(RowY-2)*Scale),
+                                     FVector2D(40*Scale,40*Scale),UpName,true,2);
+                if(Bought<AHSheet::BuyCeil)
+                    Label(FString::Printf(TEXT("proximo: %d pt"),Next),712,RowY+10,.62f,
+                          bCanUp?AHUI::Dim:AHUI::Red);
+                else
+                    Label(TEXT("no teto"),712,RowY+10,.62f,AHUI::Dim);
+            }
+
+            // ── The sheet this would produce ────────────────────────────
+            {
+                FString Kitted[static_cast<int32>(EAHSlot::Count)];
+                const AHItems::FAHKit& Peek=AHItems::Kit(Hero->HeroClass,
+                    FMath::Max(0,Hero->StartingKit));
+                for(int32 I=0;I<8 && Peek.Itens[I];++I)
+                {
+                    const FAHItemData* Thing=AHItems::Find(FString(Peek.Itens[I]));
+                    if(!Thing || Thing->Slot==EAHSlot::Nenhum) continue;
+                    const int32 Where=static_cast<int32>(Thing->Slot);
+                    if(Kitted[Where].IsEmpty()) Kitted[Where]=FString(Thing->Id);
+                }
+                const AHSheet::FAHDerived Peeked=
+                    AHSheet::Derive(Hero->HeroClass,Hero->Ancestry,1,Hero->Abilities,Kitted);
+
+                Panel(900,280,470,380);
+                Label(TEXT("COMO VOCE COMECA"),1135,296,.95f,AHUI::Gold,true,true);
+                Label(TEXT("(com o primeiro kit; o proximo passo troca)"),1135,322,.62f,AHUI::Dim,true);
+                auto Row=[&](const FString& What,const FString& Value,float RowY,FLinearColor Tone)
+                {
+                    Label(What,930,RowY,.82f,AHUI::Text);
+                    Label(Value,1340,RowY,.95f,Tone,true,true);
+                };
+                Row(TEXT("Pontos de vida"),FString::Printf(TEXT("%d"),Peeked.MaxHealth),352,AHUI::Bright);
+                Row(TEXT("Classe de armadura"),FString::Printf(TEXT("%d"),Peeked.ArmorClass),384,AHUI::Bright);
+                Row(TEXT("Ataque"),FString::Printf(TEXT("%+d"),Peeked.AttackBonus),416,AHUI::Bright);
+                Row(TEXT("Dano"),FString::Printf(TEXT("%dd%d%+d"),Peeked.DamageDice,Peeked.DamageSides,Peeked.DamageModifier),448,AHUI::Bright);
+                Row(TEXT("Iniciativa"),FString::Printf(TEXT("%+d"),Peeked.InitiativeBonus),480,AHUI::Text);
+                Row(TEXT("Deslocamento"),FString::Printf(TEXT("%.0f m"),Peeked.Movement/100.f),512,AHUI::Text);
+                if(Picked.bCaster)
+                {
+                    Row(TEXT("Ataque de magia"),FString::Printf(TEXT("%+d"),Peeked.SpellAttack),544,AHUI::Purple);
+                    Row(TEXT("CD das suas magias"),FString::Printf(TEXT("%d"),Peeked.SpellDC),576,AHUI::Purple);
+                }
+                if(Peeked.RangedRange>0)
+                    Row(TEXT("Alcance"),FString::Printf(TEXT("%.0f m"),Peeked.RangedRange/100.f),608,AHUI::Teal);
+                if(Peeked.bOverloaded)
+                    Label(TEXT("Armadura pesada demais: -3 m"),1135,632,.70f,AHUI::Red,true);
+            }
+
+            Panel(250,672,300,44,HoveredBox==TEXT("AbilAuto"));
+            Label(TEXT("SUGERIDO"),400,682,.90f,AHUI::Gold,true,true);
+            AddHitBox(FVector2D(OffsetX+250*Scale,OffsetY+672*Scale),FVector2D(300*Scale,44*Scale),TEXT("AbilAuto"),true,2);
+
+            Panel(580,672,300,44,HoveredBox==TEXT("BackClass"));
+            Label(TEXT("VOLTAR: CLASSE"),730,682,.90f,AHUI::Dim,true);
+            AddHitBox(FVector2D(OffsetX+580*Scale,OffsetY+672*Scale),FVector2D(300*Scale,44*Scale),TEXT("BackClass"),true,2);
+
+            Panel(910,672,440,44,HoveredBox==TEXT("AbilDone"));
+            Label(Left>0?FString::Printf(TEXT("SEGUIR  (ainda sobram %d pontos)"),Left)
+                        :FString(TEXT("SEGUIR: EQUIPAMENTO")),
+                  1130,682,.95f,Left>0?AHUI::Amber:AHUI::Bright,true,true);
+            AddHitBox(FVector2D(OffsetX+910*Scale,OffsetY+672*Scale),FVector2D(440*Scale,44*Scale),TEXT("AbilDone"),true,2);
+            return;
+        }
+
+        // ═══════════════════════════════════════════════════════════════
+        // 4 / 4  ·  O EQUIPAMENTO
+        // ═══════════════════════════════════════════════════════════════
+        /**
+         * Two kits, and the sheet each one produces, side by side.
+         *
+         * This is the SRD's "(a) chain mail or (b) leather and a longbow"
+         * turned into something you can judge: the armour class and the damage
+         * under each card are computed with the player's own abilities, so a
+         * character who bought Dexterity can see that the heavy armour would
+         * waste it.
+         */
+        {
+            const FAHClassSheet& Picked=AHRules::Class(Hero->HeroClass);
+            Panel(200,140,1200,600,true);
+            Label(TEXT("A S H E N   H O L L O W"),800,160,1.6f,AHUI::Bright,true,true);
+            Label(TEXT("4 / 4  ·  ESCOLHA SEU EQUIPAMENTO"),800,200,1.f,AHUI::Gold,true);
+            Label(FString(Picked.Name)+TEXT("  ·  o que voce leva na estrada"),800,228,.82f,AHUI::Dim,true);
+
+            for(int32 K=0;K<AHItems::KitsPerClass;++K)
+            {
+                const AHItems::FAHKit& Kit=AHItems::Kit(Hero->HeroClass,K);
+                const FName Name(*FString::Printf(TEXT("Kit%d"),K));
+                const float CardX=250.f+K*560.f;
+                Panel(CardX,262,520,400,HoveredBox==Name);
+
+                FString Kitted[static_cast<int32>(EAHSlot::Count)];
+                for(int32 I=0;I<8 && Kit.Itens[I];++I)
+                {
+                    const FAHItemData* Thing=AHItems::Find(FString(Kit.Itens[I]));
+                    if(!Thing || Thing->Slot==EAHSlot::Nenhum) continue;
+                    const int32 Where=static_cast<int32>(Thing->Slot);
+                    if(Kitted[Where].IsEmpty()) Kitted[Where]=FString(Thing->Id);
+                }
+                const AHSheet::FAHDerived With=
+                    AHSheet::Derive(Hero->HeroClass,Hero->Ancestry,1,Hero->Abilities,Kitted);
+
+                const float Mid=CardX+260.f;
+                Label(Kit.Nome,Mid,282,1.15f,AHUI::Bright,true,true);
+                Label(Kit.Linha,Mid,312,.70f,AHUI::Text,true);
+                DrawLine(OffsetX+(CardX+30)*Scale,OffsetY+338*Scale,
+                         OffsetX+(CardX+490)*Scale,OffsetY+338*Scale,AHUI::Copper,.9f*Scale);
+
+                float ItemY=352.f;
+                for(int32 I=0;I<8 && Kit.Itens[I];++I)
+                {
+                    const FAHItemData* Thing=AHItems::Find(FString(Kit.Itens[I]));
+                    if(!Thing) continue;
+                    const bool bWorn=Thing->Slot!=EAHSlot::Nenhum;
+                    // ASCII para o marcador: este arquivo ja tem acentos que
+                    // compilam, mas um losango U+25C6 e um simbolo novo no meio
+                    // de um build de noventa minutos. Nao vale o risco.
+                    Label(FString(bWorn?TEXT("[x] "):TEXT(" -  "))+FString(Thing->Nome),
+                          CardX+34,ItemY,.78f,bWorn?AHUI::Text:AHUI::Dim);
+                    ItemY+=24.f;
+                }
+
+                DrawLine(OffsetX+(CardX+30)*Scale,OffsetY+556*Scale,
+                         OffsetX+(CardX+490)*Scale,OffsetY+556*Scale,AHUI::Copper,.9f*Scale);
+                Label(FString::Printf(TEXT("CA %d     PV %d     ataque %+d     1d%d%+d"),
+                                      With.ArmorClass,With.MaxHealth,With.AttackBonus,
+                                      With.DamageSides,With.DamageModifier),
+                      Mid,570,.88f,AHUI::Gold,true,true);
+                if(With.RangedRange>0)
+                    Label(FString::Printf(TEXT("a distancia: %.0f m"),With.RangedRange/100.f),
+                          Mid,596,.72f,AHUI::Teal,true);
+                if(With.bOverloaded)
+                    Label(TEXT("pesada demais para a sua Forca: -3 m"),Mid,596,.72f,AHUI::Red,true);
+
+                DrawRect(FLinearColor(.18f,.10f,.03f,.85f),
+                         OffsetX+(CardX+110)*Scale,OffsetY+620*Scale,300*Scale,30*Scale);
+                Label(TEXT("COMECAR ASSIM"),Mid,626,.95f,AHUI::Bright,true,true);
+                AddHitBox(FVector2D(OffsetX+CardX*Scale,OffsetY+262*Scale),
+                          FVector2D(520*Scale,400*Scale),Name,true,2);
+            }
+
+            Panel(600,680,400,44,HoveredBox==TEXT("BackAbil"));
+            Label(TEXT("VOLTAR: PONTOS"),800,690,.90f,AHUI::Dim,true);
+            AddHitBox(FVector2D(OffsetX+600*Scale,OffsetY+680*Scale),FVector2D(400*Scale,44*Scale),TEXT("BackAbil"),true,2);
+            return;
+        }
     }
 
     // ═══════════════════════════════════════════════════════════════════════
@@ -695,6 +1234,48 @@ void AAHCombatHUD::DrawHUD()
     // ── Title ────────────────────────────────────────────────────────────────
     Label(TEXT("ASHEN  HOLLOW"),32,27,1.1f,AHUI::Bright,false,true);
     Label(TEXT("PÁTIO DOS JURAMENTOS"),33,50,.74f,AHUI::Dim);
+
+    // ── Where the content is ─────────────────────────────────────────────
+    /**
+     * Two lines, only while exploring: how far the nearest dungeon is and how
+     * far the nearest fight is, each with a compass point.
+     *
+     * Lucas reported "nao consigo entrar nas dungeons nem inimigos sairem" on
+     * a world that had both, with a navmesh that worked. Eighteen camps and
+     * sixteen landmarks spread over a kilometre is a lot of grass between
+     * things, and from inside the game "there is nothing here" and "the
+     * spawning is broken" look exactly the same. A world this size has to say
+     * where its content is; the minimap shows it, but only if you already
+     * know to look at a magenta dot.
+     */
+    if(Arena && Mode && Mode->IsExploring())
+    {
+        if(Hero->Level==4 && Hero->Feat==0) Label(TEXT("NIVEL 4: escolha seu talento em P > EVOLUCAO"),800,55,.86f,AHUI::Bright,true,true);
+        for(const auto& Drop:Mode->Loot)
+        {
+            if(Drop.bTaken || FVector::Dist2D(Drop.Where,Hero->GetActorLocation())>1800) continue;
+            FVector2D Screen;
+            if(PC->ProjectWorldLocationToScreen(Drop.Where+FVector(0,0,45),Screen))
+                Label(FVector::Dist(Hero->GetActorLocation(),Drop.Where)<240?TEXT("[G] RECOLHER SAQUE"):TEXT("SAQUE"),(Screen.X-OffsetX)/Scale,(Screen.Y-OffsetY)/Scale,.72f,AHUI::Bright,true,true);
+        }
+        FString Den, Fight;
+        Arena->WhereTo(Den, Fight);
+        Label(Den,   33, 74, .70f, FLinearColor(.92f,.42f,.86f));
+        Label(Fight, 33, 92, .70f, AHUI::Red);
+        /**
+         * And the errand, on a third line.
+         *
+         * A quest the player has to remember is a quest the player abandons.
+         * One line that always says which of the four things to do next --
+         * find the carter, go and get the pack, bring it back, done -- with the
+         * distance and the compass point, exactly like the two lines above it.
+         */
+        const FString Errand = Arena->ErrandLine();
+        if (!Errand.IsEmpty())
+            Label(Errand, 33, 110, .70f,
+                  Arena->ErrandStage >= 3 ? AHUI::Dim : AHUI::Bright);
+        Label(TEXT("P  ficha e mochila"), 33, 128, .62f, AHUI::Dim);
+    }
 
     // ═══════════════════════════════════════════════════════════════════════
     // INITIATIVE STRIP
@@ -856,7 +1437,7 @@ void AAHCombatHUD::DrawHUD()
 
     if(HoveredBox==TEXT("EndTurn")) Tooltip=TEXT("Encerra seu turno. Ação, bônus e movimento renovam no próximo.");
     Label(Tooltip,800,720,.86f,AHUI::Text,true);
-    Label(TEXT("Botão direito: mover / alvo    A / D: girar câmera    Roda: zoom    C: analisar    F5: reiniciar    Sair do alcance provoca ataque de oportunidade"),800,882,.66f,AHUI::Dim,true);
+    Label(TEXT("TAB ou F: travar alvo    Clique esquerdo: travar alvo    Botão direito: mover / atacar    A / D: câmera    Roda: zoom    C: analisar    F5: reiniciar"),800,882,.66f,AHUI::Dim,true);
 
     // ═══════════════════════════════════════════════════════════════════════
     // COMBAT LOG
@@ -952,12 +1533,85 @@ void AAHCombatHUD::DrawHUD()
     }
 
     // ═══════════════════════════════════════════════════════════════════════
+    // THE PEOPLE WHO LIVE HERE
+    // ═══════════════════════════════════════════════════════════════════════
+    /**
+     * A name over every villager, and what he is saying when he is saying
+     * something.
+     *
+     * Every character in this game is the same grey mannequin, so without a
+     * label there is no way at all to tell a woodcutter from a bandit until one
+     * of them attacks -- and the answer to that cannot be "look at the health
+     * bar", because a villager does not have one. Green name, trade underneath,
+     * and the hint that G talks to whoever is nearest.
+     *
+     * Speech is drawn from two strings on the villager and a clock. There is no
+     * widget, no queue and no dialogue tree: three quarters of what makes a
+     * place feel inhabited is that its people say something when you walk past,
+     * and that is a line of text over a head for four seconds.
+     */
+    {
+        const AAHVillager* Talking = Mode ? Mode->TalkingTo.Get() : nullptr;
+        const AAHVillager* Closest = nullptr;
+        float ClosestAway = 360.f;
+        for(TActorIterator<AAHVillager> It(GetWorld());It;++It)
+        {
+            const AAHVillager* Who=*It;
+            if(!IsValid(Who)) continue;
+            const float Away=FVector::Dist2D(Hero->GetActorLocation(),Who->GetActorLocation());
+            if(Away<ClosestAway) { ClosestAway=Away; Closest=Who; }
+            // Past thirty metres a name tag is clutter you cannot read anyway.
+            if(Away>3000.f) continue;
+            FVector2D Head;
+            if(!PC->ProjectWorldLocationToScreen(Who->GetActorLocation()+FVector(0,0,150),Head)) continue;
+            const float VX=(Head.X-OffsetX)/Scale, VY=(Head.Y-OffsetY)/Scale;
+            if(VY<120||VY>680||VX<30||VX>1220) continue;
+
+            DrawRect(FLinearColor(0,0,0,.45f),Head.X-70*Scale,Head.Y-2*Scale,140*Scale,15*Scale);
+            Label(Who->Nome,VX,VY,.80f,AHUI::Green,true);
+            Label(Who->Oficio.ToUpper(),VX,VY+15,.58f,AHUI::Dim,true);
+            if(!Who->Fala.IsEmpty())
+            {
+                const float Wide=FMath::Max(140.f,Who->Fala.Len()*7.4f);
+                DrawRect(FLinearColor(.02f,.02f,.03f,.78f),
+                         Head.X-Wide*.5f*Scale,Head.Y-34*Scale,Wide*Scale,20*Scale);
+                Label(Who->Fala,VX,VY-31,.74f,AHUI::Text,true);
+            }
+        }
+
+        // ── The conversation ────────────────────────────────────────────
+        // A panel at the bottom while somebody is being talked to, so a line
+        // that scrolled out of the log is still readable. It says who, what he
+        // does, and what he just said.
+        if(IsValid(Talking))
+        {
+            Panel(430,556,740,86);
+            Label(Talking->Nome.ToUpper(),450,566,.92f,AHUI::Bright,false,true);
+            Label(Talking->Oficio.ToUpper(),450,590,.62f,AHUI::Dim);
+            // FString on both arms: a ternary between a TCHAR literal and an
+            // FString has no common type and does not compile.
+            Label(Talking->Fala.IsEmpty()?FString(TEXT("...")):Talking->Fala,
+                  450,612,.78f,AHUI::Text);
+            Label(TEXT("G fala de novo"),1150,612,.60f,AHUI::Dim);
+        }
+        else if(IsValid(Closest) && Mode && Mode->IsExploring())
+            Label(TEXT("G  falar"),800,626,.72f,AHUI::Green,true);
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════
     // TARGET INFO
     // ═══════════════════════════════════════════════════════════════════════
-    if(PC->HoveredEnemy&&PC->HoveredEnemy->IsAlive())
+    // The panel follows the CHOSEN target first and the cursor second, so the
+    // odds on screen are the odds for the foe the next action will actually
+    // hit. It deliberately does NOT fall back to the nearest enemy the way the
+    // actions do: a panel that appears on its own for a camp you have not
+    // reached yet is a panel nobody asked for.
+    AAHCharacter* Foe=PC->ChosenTarget.Get();
+    const bool bLocked=Foe&&Foe->IsAlive();
+    if(!bLocked) Foe=PC->HoveredEnemy.Get();
+    if(Foe&&Foe->IsAlive())
     {
-        DrawTargetBrackets(PC->HoveredEnemy,PC,Now);
-        AAHCharacter* Foe=PC->HoveredEnemy.Get();
+        DrawTargetBrackets(Foe,PC,Now);
 
         // The number on screen has to be the number the dice will use. Cover,
         // high ground and the crowded-shot penalty all move it, and a modifier
@@ -973,10 +1627,12 @@ void AAHCombatHUD::DrawHUD()
         const int Chance=FMath::RoundToInt(100*Odds);
         Panel(640,130,320,90);
         DrawRect(FLinearColor(AHUI::Red.R,AHUI::Red.G,AHUI::Red.B,.12f),OffsetX+641*Scale,OffsetY+131*Scale,318*Scale,88*Scale);
-        Label(PC->HoveredEnemy->EnemyName,800,140,1.f,AHUI::Bright,true,true);
+        Label(bLocked?FString::Printf(TEXT(">>  %s  <<"),*Foe->EnemyName):Foe->EnemyName,
+              800,140,1.f,bLocked?AHUI::Gold:AHUI::Bright,true,true);
+        if(bLocked) Label(TEXT("ALVO TRAVADO - Q ataca, E conjura aqui"),800,206,.66f,AHUI::Gold,true);
         const float TBX=OffsetX+648*Scale,TBY=OffsetY+160*Scale,TBW=292*Scale,TBH=8*Scale;
         DrawRect(FLinearColor(.06f,.008f,.008f,1.f),TBX,TBY,TBW,TBH);
-        const float TF=PC->HoveredEnemy->MaxHealth>0?(float)PC->HoveredEnemy->Health/PC->HoveredEnemy->MaxHealth:0.f;
+        const float TF=Foe->MaxHealth>0?(float)Foe->Health/Foe->MaxHealth:0.f;
         DrawRect(FLinearColor::LerpUsingHSV(AHUI::Red,AHUI::Amber,TF),TBX,TBY,TBW*TF,TBH);
         DrawRect(FLinearColor(1,1,1,.07f),TBX,TBY,TBW*TF,TBH*.4f);
         const FLinearColor CC=Chance>=60?AHUI::Green:Chance>=35?AHUI::Amber:AHUI::Red;
@@ -1053,18 +1709,96 @@ void AAHCombatHUD::DrawHUD()
     if(TurnBannerTime>0.f) DrawTurnBanner(Now-TurnBannerTime,bBannerHeroTurn);
 
     // ═══════════════════════════════════════════════════════════════════════
+    // EXPLORING
+    // ═══════════════════════════════════════════════════════════════════════
+    // The action bar stays on screen while exploring, because the turn budget is
+    // simply held full rather than switched off. This banner is what tells the
+    // player which of the two they are in.
+    if(Mode&&Mode->IsExploring()&&Hero->IsAlive())
+    {
+        int32 Waiting=0;
+        for(const auto& Camp:Mode->Camps) if(!Camp.bCleared) ++Waiting;
+        Panel(600,46,400,48);
+        Label(Hero->bSneaking?TEXT("FURTIVO"):TEXT("EXPLORANDO"),800,56,1.f,
+              Hero->bSneaking?AHUI::Gold:AHUI::Teal,true,true);
+        Label(Waiting==0 ? FString(TEXT("O vale esta em silencio"))
+            : Hero->bSneaking
+                ? FString::Printf(TEXT("%d grupo(s) hostil(is)  ·  notam voce muito mais perto  ·  ataque primeiro para emboscar"),Waiting)
+                : FString::Printf(TEXT("%d grupo(s) hostil(is)  ·  Z para andar furtivo e emboscar"),Waiting),
+              800,76,.70f,Hero->bSneaking?AHUI::Gold:AHUI::Dim,true);
+
+        DrawMinimap(Mode, Hero, PC, Now);
+
+        // 125,336 and not 35,250: that slot already belongs to the class feature
+        // button, and two buttons stacked on one another also stack their hit
+        // boxes, so the wrong one answers the click.
+        Button(TEXT("Sneak"),TEXT("Z"),Hero->bSneaking?TEXT("DE PE"):TEXT("FURTIVO"),125,336,true,.65f);
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // A FICHA  (P)
+    // ═══════════════════════════════════════════════════════════════════════
+    /**
+     * The sheet and the pack, over everything, on one key.
+     *
+     * It is read-only for now and that is a deliberate first step rather than
+     * an oversight: the numbers are new, they are derived by a function that
+     * has never run inside the engine, and the first thing anybody needs is
+     * to SEE them and tell me they are wrong. Equipping and unequipping from
+     * here is the next piece; the slots are already drawn as slots so the
+     * screen does not have to be rebuilt to get it.
+     */
+    if(PC->bSheetOpen && Hero->bCharacterReady)
+    {
+        AddHitBox(FVector2D(OffsetX,OffsetY),FVector2D(1600*Scale,900*Scale),TEXT("SheetBackdrop"),true,10);
+        auto SheetButton=[&](FName Name,const FString& Text,float X,float Y,float W,float H,bool Enabled=true)
+        {
+            Panel(X,Y,W,H,Enabled && HoveredBox==Name);
+            Label(Text,X+W*.5f,Y+H*.5f-7,.62f,Enabled?AHUI::Gold:AHUI::Dim,true,true);
+            if(Enabled) AddHitBox(FVector2D(OffsetX+X*Scale,OffsetY+Y*Scale),FVector2D(W*Scale,H*Scale),Name,true,20);
+        };
+        DrawRect(FLinearColor(0,0,0,.72f),OffsetX,OffsetY,1600*Scale,900*Scale);
+        Panel(150,70,1300,760,true);
+
+        if(PC->bQuestJournal && Mode)
+        {
+            Label(TEXT("DIARIO DO VALE"),208,95,1.4f,AHUI::Gold,false,true);
+            Label(TEXT("Azul: pedido disponivel   |   Dourado: objetivo   |   Verde: voltar ao morador"),208,145,.72f,AHUI::Text);
+            SheetButton(TEXT("Ficha"),TEXT("FECHAR [P]"),1280,86,140,34);
+            SheetButton(TEXT("Journal"),TEXT("FICHA [J]"),1100,86,150,34);
+            float Row=195;
+            for(const auto& Q:Mode->SideQuests)
+            {
+                const FLinearColor Tone=Q.Stage==3?AHUI::Dim:Q.Stage==2?AHUI::Green:Q.Stage==1?AHUI::Gold:AHUI::Teal;
+                Panel(196,Row,1208,114);
+                const TCHAR* Status=Q.Stage==0?TEXT("DISPONIVEL"):Q.Stage==1?TEXT("EM ANDAMENTO"):Q.Stage==2?TEXT("RECEBER RECOMPENSA"):TEXT("CONCLUIDA");
+                Label(Q.Title+TEXT("  -  ")+Status,212,Row+12,.9f,Tone,false,true);
+                Label(Q.Objective,212,Row+43,.75f,AHUI::Text);
+                const double Distance=FVector::Dist2D(Hero->GetActorLocation(),Q.Stage==1?Q.Target:Q.Giver)/100;
+                Label(FString::Printf(TEXT("%d XP + pocao de cura   |   %s: %.0f m"),Q.RewardXP,Q.Stage==1?TEXT("objetivo"):TEXT("morador"),Distance),212,Row+76,.7f,AHUI::Dim);
+                Row+=126;
+            }
+            Label(Mode->ErrandLine(),208,735,.75f,AHUI::Text);
+            Label(TEXT("Converse com moradores usando G ou clicando neles. Missoes valem para este vale."),208,790,.72f,AHUI::Dim);
+            return;
+        }
+        DrawInventorySheet(Hero,PC,Mode);
+        return;
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════
     // VICTORY / DEFEAT
     // ═══════════════════════════════════════════════════════════════════════
-    if(Mode&&Mode->bFinished)
+    // Victory is now clearing the whole valley, not winning one duel: a single
+    // camp down just hands the world back and the walk continues.
+    if(Mode&&(Mode->bFinished||Mode->IsWorldCleared()))
     {
-        bool bEnemyAlive=false;
-        for(const auto& C:Mode->Order) if(C.Get()&&C->bEnemy&&C->IsAlive()) bEnemyAlive=true;
-        const bool Win=!bEnemyAlive;
+        const bool Win=Mode->IsWorldCleared()&&Hero->IsAlive();
         DrawRect(FLinearColor(0,0,0,.65f),OffsetX,OffsetY,1600*Scale,900*Scale);
         Panel(530,210,540,340,true);
         DrawRect((Win?AHUI::Teal:AHUI::Red)*.4f,OffsetX+531*Scale,OffsetY+211*Scale,538*Scale,108*Scale);
         Label(Win?TEXT("V I T Ó R I A"):Hero->bStabilized?TEXT("ESTABILIZADO"):TEXT("D E R R O T A"),800,228,2.f,AHUI::Bright,true,true);
-        Label(Win?TEXT("O inimigo foi derrotado."):Hero->bStabilized?TEXT("Voce sobreviveu. Encontro encerrado."):TEXT("Você foi derrotado."),800,270,.95f,AHUI::Text,true);
+        Label(Win?TEXT("O vale esta limpo. Todos os grupos foram derrotados."):Hero->bStabilized?TEXT("Voce sobreviveu. Jornada encerrada."):TEXT("Você foi derrotado."),800,270,.95f,AHUI::Text,true);
         Label(FString::Printf(TEXT("Nivel %d | XP %d / 2700 | vitoria +300 XP"),Hero->Level,Hero->Experience),800,300,.85f,AHUI::Gold,true);
         if(Hero->Level==4 && Hero->Feat==0)
         {
@@ -1075,7 +1809,7 @@ void AAHCombatHUD::DrawHUD()
         }
         else if(Hero->IsAlive() || Hero->bStabilized)
         {
-            Label(TEXT("Descansar e iniciar o proximo combate"),800,350,.9f,AHUI::Text,true);
+            Label(TEXT("Descansar e partir para um novo vale"),800,350,.9f,AHUI::Text,true);
             Button(TEXT("Next"),TEXT(""),TEXT("SEGUIR"),759,385,true);
         }
         Label(TEXT("F5: nova jornada (reinicia XP)"),800,510,.8f,AHUI::Dim,true);

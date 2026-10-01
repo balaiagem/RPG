@@ -1,0 +1,1848 @@
+{
+  "unit": "metre",
+  "grain_centre": 0.75058,
+  "pivot": "base centre",
+  "door_axis": "+X",
+  "unreal_scale": 100,
+  "palette": {
+    "M_Kit_reboco": {
+      "rgb": [
+        0.862,
+        0.8,
+        0.663
+      ],
+      "roughness": 0.88,
+      "emissive": false
+    },
+    "M_Kit_reboco2": {
+      "rgb": [
+        0.69,
+        0.616,
+        0.494
+      ],
+      "roughness": 0.88,
+      "emissive": false
+    },
+    "M_Kit_madeira": {
+      "rgb": [
+        0.18,
+        0.118,
+        0.078
+      ],
+      "roughness": 0.8,
+      "emissive": false
+    },
+    "M_Kit_tabua": {
+      "rgb": [
+        0.459,
+        0.31,
+        0.176
+      ],
+      "roughness": 0.82,
+      "emissive": false
+    },
+    "M_Kit_telha": {
+      "rgb": [
+        0.553,
+        0.216,
+        0.133
+      ],
+      "roughness": 0.74,
+      "emissive": false
+    },
+    "M_Kit_telha2": {
+      "rgb": [
+        0.404,
+        0.145,
+        0.098
+      ],
+      "roughness": 0.76,
+      "emissive": false
+    },
+    "M_Kit_colmo": {
+      "rgb": [
+        0.678,
+        0.522,
+        0.243
+      ],
+      "roughness": 0.94,
+      "emissive": false
+    },
+    "M_Kit_colmo2": {
+      "rgb": [
+        0.545,
+        0.408,
+        0.18
+      ],
+      "roughness": 0.94,
+      "emissive": false
+    },
+    "M_Kit_pedra": {
+      "rgb": [
+        0.545,
+        0.492,
+        0.415
+      ],
+      "roughness": 0.84,
+      "emissive": false
+    },
+    "M_Kit_pedra_esc": {
+      "rgb": [
+        0.355,
+        0.312,
+        0.268
+      ],
+      "roughness": 0.86,
+      "emissive": false
+    },
+    "M_Kit_folha": {
+      "rgb": [
+        0.149,
+        0.318,
+        0.133
+      ],
+      "roughness": 0.92,
+      "emissive": false
+    },
+    "M_Kit_folha2": {
+      "rgb": [
+        0.224,
+        0.388,
+        0.157
+      ],
+      "roughness": 0.92,
+      "emissive": false
+    },
+    "M_Kit_casca": {
+      "rgb": [
+        0.224,
+        0.157,
+        0.106
+      ],
+      "roughness": 0.9,
+      "emissive": false
+    },
+    "M_Kit_vidro": {
+      "rgb": [
+        0.09,
+        0.114,
+        0.125
+      ],
+      "roughness": 0.22,
+      "emissive": false
+    },
+    "M_Kit_metal": {
+      "rgb": [
+        0.286,
+        0.294,
+        0.318
+      ],
+      "roughness": 0.42,
+      "emissive": false
+    },
+    "M_Kit_pano": {
+      "rgb": [
+        0.56,
+        0.18,
+        0.157
+      ],
+      "roughness": 0.92,
+      "emissive": false
+    },
+    "M_Kit_pano2": {
+      "rgb": [
+        0.827,
+        0.765,
+        0.643
+      ],
+      "roughness": 0.92,
+      "emissive": false
+    },
+    "M_Kit_brasa": {
+      "rgb": [
+        0.949,
+        0.435,
+        0.137
+      ],
+      "roughness": 0.6,
+      "emissive": true
+    },
+    "M_Kit_couro": {
+      "rgb": [
+        0.216,
+        0.125,
+        0.071
+      ],
+      "roughness": 0.78,
+      "emissive": false
+    },
+    "M_Kit_runa": {
+      "rgb": [
+        0.98,
+        0.804,
+        0.392
+      ],
+      "roughness": 0.45,
+      "emissive": true
+    },
+    "M_Kit_pena": {
+      "rgb": [
+        0.075,
+        0.082,
+        0.11
+      ],
+      "roughness": 0.52,
+      "emissive": false
+    },
+    "M_Kit_penugem": {
+      "rgb": [
+        0.796,
+        0.714,
+        0.592
+      ],
+      "roughness": 0.94,
+      "emissive": false
+    },
+    "M_Kit_pelo": {
+      "rgb": [
+        0.478,
+        0.333,
+        0.204
+      ],
+      "roughness": 0.88,
+      "emissive": false
+    },
+    "M_Kit_bico": {
+      "rgb": [
+        0.741,
+        0.545,
+        0.18
+      ],
+      "roughness": 0.55,
+      "emissive": false
+    }
+  },
+  "pieces": [
+    {
+      "name": "SM_Kit_casa_a",
+      "kind": "house",
+      "footprint_x_m": 5.2,
+      "footprint_y_m": 4.4,
+      "height_m": 5.859,
+      "door_yaw_deg": 0,
+      "faces": 2282,
+      "collision": [
+        {
+          "centre": [
+            0.0,
+            0.0,
+            2.93
+          ],
+          "size": [
+            5.2,
+            4.4,
+            5.859
+          ],
+          "yaw_deg": 0.0
+        }
+      ],
+      "ucx": [
+        "UCX_SM_Kit_casa_a_00"
+      ],
+      "fbx": "SM_Kit_casa_a.fbx",
+      "materials": [
+        "M_Kit_pedra_esc",
+        "M_Kit_pedra",
+        "M_Kit_reboco",
+        "M_Kit_madeira",
+        "M_Kit_telha",
+        "M_Kit_telha2",
+        "M_Kit_tabua",
+        "M_Kit_metal",
+        "M_Kit_vidro"
+      ]
+    },
+    {
+      "name": "SM_Kit_casa_b",
+      "kind": "house",
+      "footprint_x_m": 6.6,
+      "footprint_y_m": 5.2,
+      "height_m": 8.967,
+      "door_yaw_deg": 0,
+      "faces": 3894,
+      "collision": [
+        {
+          "centre": [
+            0.0,
+            0.0,
+            4.484
+          ],
+          "size": [
+            6.6,
+            5.2,
+            8.967
+          ],
+          "yaw_deg": 0.0
+        }
+      ],
+      "ucx": [
+        "UCX_SM_Kit_casa_b_00"
+      ],
+      "fbx": "SM_Kit_casa_b.fbx",
+      "materials": [
+        "M_Kit_pedra_esc",
+        "M_Kit_pedra",
+        "M_Kit_reboco2",
+        "M_Kit_madeira",
+        "M_Kit_telha",
+        "M_Kit_telha2",
+        "M_Kit_tabua",
+        "M_Kit_metal",
+        "M_Kit_vidro"
+      ]
+    },
+    {
+      "name": "SM_Kit_casa_c",
+      "kind": "house",
+      "footprint_x_m": 8.0,
+      "footprint_y_m": 6.0,
+      "height_m": 9.951,
+      "door_yaw_deg": 0,
+      "faces": 3998,
+      "collision": [
+        {
+          "centre": [
+            0.0,
+            0.0,
+            4.976
+          ],
+          "size": [
+            8.0,
+            6.0,
+            9.951
+          ],
+          "yaw_deg": 0.0
+        }
+      ],
+      "ucx": [
+        "UCX_SM_Kit_casa_c_00"
+      ],
+      "fbx": "SM_Kit_casa_c.fbx",
+      "materials": [
+        "M_Kit_pedra_esc",
+        "M_Kit_pedra",
+        "M_Kit_reboco",
+        "M_Kit_madeira",
+        "M_Kit_telha",
+        "M_Kit_telha2",
+        "M_Kit_tabua",
+        "M_Kit_metal",
+        "M_Kit_vidro"
+      ]
+    },
+    {
+      "name": "SM_Kit_casa_d",
+      "kind": "house",
+      "footprint_x_m": 4.6,
+      "footprint_y_m": 4.0,
+      "height_m": 5.466,
+      "door_yaw_deg": 0,
+      "faces": 2282,
+      "collision": [
+        {
+          "centre": [
+            0.0,
+            0.0,
+            2.733
+          ],
+          "size": [
+            4.6,
+            4.0,
+            5.466
+          ],
+          "yaw_deg": 0.0
+        }
+      ],
+      "ucx": [
+        "UCX_SM_Kit_casa_d_00"
+      ],
+      "fbx": "SM_Kit_casa_d.fbx",
+      "materials": [
+        "M_Kit_pedra_esc",
+        "M_Kit_pedra",
+        "M_Kit_reboco2",
+        "M_Kit_madeira",
+        "M_Kit_colmo",
+        "M_Kit_colmo2",
+        "M_Kit_tabua",
+        "M_Kit_metal",
+        "M_Kit_vidro"
+      ]
+    },
+    {
+      "name": "SM_Kit_casa_e",
+      "kind": "house",
+      "footprint_x_m": 7.2,
+      "footprint_y_m": 4.8,
+      "height_m": 5.952,
+      "door_yaw_deg": 0,
+      "faces": 2386,
+      "collision": [
+        {
+          "centre": [
+            0.0,
+            0.0,
+            2.976
+          ],
+          "size": [
+            7.2,
+            4.8,
+            5.952
+          ],
+          "yaw_deg": 0.0
+        }
+      ],
+      "ucx": [
+        "UCX_SM_Kit_casa_e_00"
+      ],
+      "fbx": "SM_Kit_casa_e.fbx",
+      "materials": [
+        "M_Kit_pedra_esc",
+        "M_Kit_pedra",
+        "M_Kit_reboco",
+        "M_Kit_madeira",
+        "M_Kit_colmo",
+        "M_Kit_colmo2",
+        "M_Kit_tabua",
+        "M_Kit_metal",
+        "M_Kit_vidro"
+      ]
+    },
+    {
+      "name": "SM_Kit_casa_f",
+      "kind": "house",
+      "footprint_x_m": 5.8,
+      "footprint_y_m": 5.8,
+      "height_m": 9.703,
+      "door_yaw_deg": 0,
+      "faces": 3790,
+      "collision": [
+        {
+          "centre": [
+            0.0,
+            0.0,
+            4.852
+          ],
+          "size": [
+            5.8,
+            5.8,
+            9.703
+          ],
+          "yaw_deg": 0.0
+        }
+      ],
+      "ucx": [
+        "UCX_SM_Kit_casa_f_00"
+      ],
+      "fbx": "SM_Kit_casa_f.fbx",
+      "materials": [
+        "M_Kit_pedra_esc",
+        "M_Kit_pedra",
+        "M_Kit_reboco2",
+        "M_Kit_madeira",
+        "M_Kit_telha",
+        "M_Kit_telha2",
+        "M_Kit_tabua",
+        "M_Kit_metal",
+        "M_Kit_vidro"
+      ]
+    },
+    {
+      "name": "SM_Kit_casa_g",
+      "kind": "house",
+      "footprint_x_m": 9.0,
+      "footprint_y_m": 5.4,
+      "height_m": 9.215,
+      "door_yaw_deg": 0,
+      "faces": 4102,
+      "collision": [
+        {
+          "centre": [
+            0.0,
+            0.0,
+            4.608
+          ],
+          "size": [
+            9.0,
+            5.4,
+            9.215
+          ],
+          "yaw_deg": 0.0
+        }
+      ],
+      "ucx": [
+        "UCX_SM_Kit_casa_g_00"
+      ],
+      "fbx": "SM_Kit_casa_g.fbx",
+      "materials": [
+        "M_Kit_pedra_esc",
+        "M_Kit_pedra",
+        "M_Kit_reboco",
+        "M_Kit_madeira",
+        "M_Kit_telha",
+        "M_Kit_telha2",
+        "M_Kit_tabua",
+        "M_Kit_metal",
+        "M_Kit_vidro"
+      ]
+    },
+    {
+      "name": "SM_Kit_casa_h",
+      "kind": "house",
+      "footprint_x_m": 4.2,
+      "footprint_y_m": 3.6,
+      "height_m": 5.174,
+      "door_yaw_deg": 0,
+      "faces": 2282,
+      "collision": [
+        {
+          "centre": [
+            0.0,
+            0.0,
+            2.587
+          ],
+          "size": [
+            4.2,
+            3.6,
+            5.174
+          ],
+          "yaw_deg": 0.0
+        }
+      ],
+      "ucx": [
+        "UCX_SM_Kit_casa_h_00"
+      ],
+      "fbx": "SM_Kit_casa_h.fbx",
+      "materials": [
+        "M_Kit_pedra_esc",
+        "M_Kit_pedra",
+        "M_Kit_reboco2",
+        "M_Kit_madeira",
+        "M_Kit_colmo",
+        "M_Kit_colmo2",
+        "M_Kit_tabua",
+        "M_Kit_metal",
+        "M_Kit_vidro"
+      ]
+    },
+    {
+      "name": "SM_Kit_celeiro",
+      "kind": "barn",
+      "footprint_x_m": 10.0,
+      "footprint_y_m": 7.0,
+      "height_m": 8.095,
+      "door_yaw_deg": 0,
+      "faces": 904,
+      "collision": [
+        {
+          "centre": [
+            0.0,
+            0.0,
+            4.048
+          ],
+          "size": [
+            10.0,
+            7.0,
+            8.095
+          ],
+          "yaw_deg": 0.0
+        }
+      ],
+      "ucx": [
+        "UCX_SM_Kit_celeiro_00"
+      ],
+      "fbx": "SM_Kit_celeiro.fbx",
+      "materials": [
+        "M_Kit_pedra_esc",
+        "M_Kit_tabua",
+        "M_Kit_madeira",
+        "M_Kit_colmo",
+        "M_Kit_colmo2",
+        "M_Kit_metal"
+      ]
+    },
+    {
+      "name": "SM_Kit_torre",
+      "kind": "tower",
+      "footprint_x_m": 3.8,
+      "footprint_y_m": 3.8,
+      "height_m": 11.165,
+      "door_yaw_deg": 0,
+      "faces": 1554,
+      "collision": [
+        {
+          "centre": [
+            0.0,
+            0.0,
+            5.582
+          ],
+          "size": [
+            3.8,
+            3.8,
+            11.165
+          ],
+          "yaw_deg": 0.0
+        }
+      ],
+      "ucx": [
+        "UCX_SM_Kit_torre_00"
+      ],
+      "fbx": "SM_Kit_torre.fbx",
+      "materials": [
+        "M_Kit_pedra_esc",
+        "M_Kit_pedra",
+        "M_Kit_madeira",
+        "M_Kit_tabua",
+        "M_Kit_telha",
+        "M_Kit_telha2",
+        "M_Kit_vidro"
+      ]
+    },
+    {
+      "name": "SM_Kit_poco",
+      "kind": "well",
+      "footprint_x_m": 2.2,
+      "footprint_y_m": 2.2,
+      "height_m": 3.365,
+      "door_yaw_deg": null,
+      "faces": 544,
+      "collision": [
+        {
+          "centre": [
+            0.0,
+            0.0,
+            1.683
+          ],
+          "size": [
+            2.2,
+            2.2,
+            3.365
+          ],
+          "yaw_deg": 0.0
+        }
+      ],
+      "ucx": [
+        "UCX_SM_Kit_poco_00"
+      ],
+      "fbx": "SM_Kit_poco.fbx",
+      "materials": [
+        "M_Kit_pedra",
+        "M_Kit_pedra_esc",
+        "M_Kit_madeira",
+        "M_Kit_telha",
+        "M_Kit_telha2",
+        "M_Kit_tabua"
+      ]
+    },
+    {
+      "name": "SM_Kit_banca",
+      "kind": "stall",
+      "footprint_x_m": 2.8,
+      "footprint_y_m": 3.6,
+      "height_m": 2.436,
+      "door_yaw_deg": 0,
+      "faces": 426,
+      "collision": [
+        {
+          "centre": [
+            -0.55,
+            0.0,
+            0.5
+          ],
+          "size": [
+            0.6,
+            3.44,
+            1.0
+          ],
+          "yaw_deg": 0.0
+        },
+        {
+          "centre": [
+            -1.25,
+            -1.6,
+            1.15
+          ],
+          "size": [
+            0.2,
+            0.2,
+            2.3
+          ],
+          "yaw_deg": 0.0
+        },
+        {
+          "centre": [
+            -1.25,
+            1.6,
+            1.15
+          ],
+          "size": [
+            0.2,
+            0.2,
+            2.3
+          ],
+          "yaw_deg": 0.0
+        }
+      ],
+      "ucx": [
+        "UCX_SM_Kit_banca_00",
+        "UCX_SM_Kit_banca_01",
+        "UCX_SM_Kit_banca_02"
+      ],
+      "fbx": "SM_Kit_banca.fbx",
+      "materials": [
+        "M_Kit_tabua",
+        "M_Kit_madeira",
+        "M_Kit_pano2",
+        "M_Kit_pano",
+        "M_Kit_colmo",
+        "M_Kit_metal"
+      ]
+    },
+    {
+      "name": "SM_Kit_ponte",
+      "kind": "bridge",
+      "footprint_x_m": 8.0,
+      "footprint_y_m": 4.4,
+      "height_m": 1.31,
+      "door_yaw_deg": null,
+      "faces": 312,
+      "collision": [
+        {
+          "centre": [
+            0.0,
+            0.0,
+            0.28
+          ],
+          "size": [
+            8.0,
+            4.4,
+            0.56
+          ],
+          "yaw_deg": 0.0
+        },
+        {
+          "centre": [
+            0.0,
+            -2.02,
+            0.92
+          ],
+          "size": [
+            6.2,
+            0.3,
+            0.78
+          ],
+          "yaw_deg": 0.0
+        },
+        {
+          "centre": [
+            0.0,
+            2.02,
+            0.92
+          ],
+          "size": [
+            6.2,
+            0.3,
+            0.78
+          ],
+          "yaw_deg": 0.0
+        }
+      ],
+      "ucx": [
+        "UCX_SM_Kit_ponte_00",
+        "UCX_SM_Kit_ponte_01",
+        "UCX_SM_Kit_ponte_02"
+      ],
+      "fbx": "SM_Kit_ponte.fbx",
+      "materials": [
+        "M_Kit_pedra",
+        "M_Kit_tabua",
+        "M_Kit_pedra_esc"
+      ]
+    },
+    {
+      "name": "SM_Kit_muro",
+      "kind": "wall",
+      "footprint_x_m": 4.0,
+      "footprint_y_m": 0.7,
+      "height_m": 2.21,
+      "door_yaw_deg": null,
+      "faces": 234,
+      "collision": [
+        {
+          "centre": [
+            0.0,
+            0.0,
+            1.105
+          ],
+          "size": [
+            4.0,
+            0.7,
+            2.21
+          ],
+          "yaw_deg": 0.0
+        }
+      ],
+      "ucx": [
+        "UCX_SM_Kit_muro_00"
+      ],
+      "fbx": "SM_Kit_muro.fbx",
+      "materials": [
+        "M_Kit_pedra",
+        "M_Kit_pedra_esc"
+      ]
+    },
+    {
+      "name": "SM_Kit_cerca",
+      "kind": "fence",
+      "footprint_x_m": 4.0,
+      "footprint_y_m": 0.3,
+      "height_m": 1.16,
+      "door_yaw_deg": null,
+      "faces": 156,
+      "collision": [
+        {
+          "centre": [
+            0.0,
+            0.0,
+            0.58
+          ],
+          "size": [
+            4.0,
+            0.3,
+            1.16
+          ],
+          "yaw_deg": 0.0
+        }
+      ],
+      "ucx": [
+        "UCX_SM_Kit_cerca_00"
+      ],
+      "fbx": "SM_Kit_cerca.fbx",
+      "materials": [
+        "M_Kit_madeira",
+        "M_Kit_tabua"
+      ]
+    },
+    {
+      "name": "SM_Kit_portao",
+      "kind": "gate",
+      "footprint_x_m": 1.2,
+      "footprint_y_m": 5.6,
+      "height_m": 4.875,
+      "door_yaw_deg": null,
+      "faces": 592,
+      "collision": [
+        {
+          "centre": [
+            0.0,
+            -2.25,
+            1.8
+          ],
+          "size": [
+            1.3,
+            1.3,
+            3.6
+          ],
+          "yaw_deg": 0.0
+        },
+        {
+          "centre": [
+            0.0,
+            2.25,
+            1.8
+          ],
+          "size": [
+            1.3,
+            1.3,
+            3.6
+          ],
+          "yaw_deg": 0.0
+        }
+      ],
+      "ucx": [
+        "UCX_SM_Kit_portao_00",
+        "UCX_SM_Kit_portao_01"
+      ],
+      "fbx": "SM_Kit_portao.fbx",
+      "materials": [
+        "M_Kit_pedra",
+        "M_Kit_pedra_esc",
+        "M_Kit_telha",
+        "M_Kit_telha2",
+        "M_Kit_madeira"
+      ]
+    },
+    {
+      "name": "SM_Kit_placa",
+      "kind": "sign",
+      "footprint_x_m": 1.0,
+      "footprint_y_m": 2.2,
+      "height_m": 2.77,
+      "door_yaw_deg": null,
+      "faces": 416,
+      "collision": [
+        {
+          "centre": [
+            0.0,
+            0.0,
+            1.3
+          ],
+          "size": [
+            0.62,
+            0.62,
+            2.6
+          ],
+          "yaw_deg": 0.0
+        }
+      ],
+      "ucx": [
+        "UCX_SM_Kit_placa_00"
+      ],
+      "fbx": "SM_Kit_placa.fbx",
+      "materials": [
+        "M_Kit_madeira",
+        "M_Kit_tabua",
+        "M_Kit_metal",
+        "M_Kit_pedra_esc",
+        "M_Kit_pedra"
+      ]
+    },
+    {
+      "name": "SM_Kit_tenda",
+      "kind": "tent",
+      "footprint_x_m": 3.0,
+      "footprint_y_m": 2.6,
+      "height_m": 1.86,
+      "door_yaw_deg": null,
+      "faces": 573,
+      "collision": [
+        {
+          "centre": [
+            0.0,
+            0.0,
+            0.92
+          ],
+          "size": [
+            2.8,
+            2.6,
+            1.84
+          ],
+          "yaw_deg": 0.0
+        }
+      ],
+      "ucx": [
+        "UCX_SM_Kit_tenda_00"
+      ],
+      "fbx": "SM_Kit_tenda.fbx",
+      "materials": [
+        "M_Kit_madeira",
+        "M_Kit_pano",
+        "M_Kit_pano2",
+        "M_Kit_tabua"
+      ]
+    },
+    {
+      "name": "SM_Kit_altar",
+      "kind": "altar",
+      "footprint_x_m": 2.0,
+      "footprint_y_m": 1.4,
+      "height_m": 1.338,
+      "door_yaw_deg": null,
+      "faces": 192,
+      "collision": [
+        {
+          "centre": [
+            0.0,
+            0.0,
+            0.669
+          ],
+          "size": [
+            2.0,
+            1.4,
+            1.338
+          ],
+          "yaw_deg": 0.0
+        }
+      ],
+      "ucx": [
+        "UCX_SM_Kit_altar_00"
+      ],
+      "fbx": "SM_Kit_altar.fbx",
+      "materials": [
+        "M_Kit_pedra_esc",
+        "M_Kit_pedra",
+        "M_Kit_brasa"
+      ]
+    },
+    {
+      "name": "SM_Kit_arco",
+      "kind": "arch",
+      "footprint_x_m": 1.2,
+      "footprint_y_m": 4.2,
+      "height_m": 4.73,
+      "door_yaw_deg": null,
+      "faces": 728,
+      "collision": [
+        {
+          "centre": [
+            0.0,
+            -1.72,
+            2.0
+          ],
+          "size": [
+            1.1,
+            1.02,
+            4.0
+          ],
+          "yaw_deg": 0.0
+        },
+        {
+          "centre": [
+            0.0,
+            1.72,
+            2.0
+          ],
+          "size": [
+            1.1,
+            1.02,
+            4.0
+          ],
+          "yaw_deg": 0.0
+        }
+      ],
+      "ucx": [
+        "UCX_SM_Kit_arco_00",
+        "UCX_SM_Kit_arco_01"
+      ],
+      "fbx": "SM_Kit_arco.fbx",
+      "materials": [
+        "M_Kit_pedra",
+        "M_Kit_pedra_esc"
+      ]
+    },
+    {
+      "name": "SM_Kit_lapide",
+      "kind": "grave",
+      "footprint_x_m": 1.1,
+      "footprint_y_m": 0.9,
+      "height_m": 1.02,
+      "door_yaw_deg": null,
+      "faces": 130,
+      "collision": [
+        {
+          "centre": [
+            0.0,
+            0.0,
+            0.51
+          ],
+          "size": [
+            1.1,
+            0.9,
+            1.02
+          ],
+          "yaw_deg": 0.0
+        }
+      ],
+      "ucx": [
+        "UCX_SM_Kit_lapide_00"
+      ],
+      "fbx": "SM_Kit_lapide.fbx",
+      "materials": [
+        "M_Kit_pedra_esc",
+        "M_Kit_pedra"
+      ]
+    },
+    {
+      "name": "SM_Kit_torre_ruina",
+      "kind": "ruin",
+      "footprint_x_m": 4.4,
+      "footprint_y_m": 4.4,
+      "height_m": 5.87,
+      "door_yaw_deg": null,
+      "faces": 1182,
+      "collision": [
+        {
+          "centre": [
+            0.0,
+            0.0,
+            2.935
+          ],
+          "size": [
+            4.4,
+            4.4,
+            5.87
+          ],
+          "yaw_deg": 0.0
+        }
+      ],
+      "ucx": [
+        "UCX_SM_Kit_torre_ruina_00"
+      ],
+      "fbx": "SM_Kit_torre_ruina.fbx",
+      "materials": [
+        "M_Kit_pedra_esc",
+        "M_Kit_pedra"
+      ]
+    },
+    {
+      "name": "SM_Kit_palicada",
+      "kind": "palisade",
+      "footprint_x_m": 3.6,
+      "footprint_y_m": 0.5,
+      "height_m": 2.53,
+      "door_yaw_deg": null,
+      "faces": 736,
+      "collision": [
+        {
+          "centre": [
+            0.0,
+            0.0,
+            1.265
+          ],
+          "size": [
+            3.6,
+            0.5,
+            2.53
+          ],
+          "yaw_deg": 0.0
+        }
+      ],
+      "ucx": [
+        "UCX_SM_Kit_palicada_00"
+      ],
+      "fbx": "SM_Kit_palicada.fbx",
+      "materials": [
+        "M_Kit_madeira",
+        "M_Kit_tabua"
+      ]
+    },
+    {
+      "name": "SM_Kit_lampiao",
+      "kind": "lamp",
+      "footprint_x_m": 0.7,
+      "footprint_y_m": 0.7,
+      "height_m": 3.449,
+      "door_yaw_deg": null,
+      "faces": 422,
+      "collision": [
+        {
+          "centre": [
+            0.0,
+            0.0,
+            1.2
+          ],
+          "size": [
+            0.44,
+            0.44,
+            2.4
+          ],
+          "yaw_deg": 0.0
+        }
+      ],
+      "ucx": [
+        "UCX_SM_Kit_lampiao_00"
+      ],
+      "fbx": "SM_Kit_lampiao.fbx",
+      "materials": [
+        "M_Kit_pedra",
+        "M_Kit_pedra_esc",
+        "M_Kit_madeira",
+        "M_Kit_metal",
+        "M_Kit_brasa"
+      ]
+    },
+    {
+      "name": "SM_Kit_menir",
+      "kind": "stone",
+      "footprint_x_m": 1.4,
+      "footprint_y_m": 1.1,
+      "height_m": 2.407,
+      "door_yaw_deg": null,
+      "faces": 156,
+      "collision": [
+        {
+          "centre": [
+            0.0,
+            0.0,
+            1.203
+          ],
+          "size": [
+            1.4,
+            1.1,
+            2.407
+          ],
+          "yaw_deg": 0.0
+        }
+      ],
+      "ucx": [
+        "UCX_SM_Kit_menir_00"
+      ],
+      "fbx": "SM_Kit_menir.fbx",
+      "materials": [
+        "M_Kit_pedra",
+        "M_Kit_pedra_esc"
+      ]
+    },
+    {
+      "name": "SM_Kit_piso",
+      "kind": "paving",
+      "footprint_x_m": 4.0,
+      "footprint_y_m": 4.0,
+      "height_m": 0.134,
+      "door_yaw_deg": null,
+      "faces": 442,
+      "collision": [
+        {
+          "centre": [
+            0.0,
+            0.0,
+            0.06
+          ],
+          "size": [
+            4.0,
+            4.0,
+            0.12
+          ],
+          "yaw_deg": 0.0
+        }
+      ],
+      "ucx": [
+        "UCX_SM_Kit_piso_00"
+      ],
+      "fbx": "SM_Kit_piso.fbx",
+      "materials": [
+        "M_Kit_pedra_esc",
+        "M_Kit_pedra"
+      ]
+    },
+    {
+      "name": "SM_Kit_arvore_a",
+      "kind": "tree",
+      "footprint_x_m": 3.2,
+      "footprint_y_m": 3.2,
+      "height_m": 5.832,
+      "door_yaw_deg": null,
+      "faces": 102,
+      "collision": [
+        {
+          "centre": [
+            0.0,
+            0.0,
+            1.95
+          ],
+          "size": [
+            0.572,
+            0.572,
+            3.9
+          ],
+          "yaw_deg": 0.0
+        }
+      ],
+      "ucx": [
+        "UCX_SM_Kit_arvore_a_00"
+      ],
+      "fbx": "SM_Kit_arvore_a.fbx",
+      "materials": [
+        "M_Kit_casca",
+        "M_Kit_folha"
+      ]
+    },
+    {
+      "name": "SM_Kit_arvore_b",
+      "kind": "tree",
+      "footprint_x_m": 3.8,
+      "footprint_y_m": 3.8,
+      "height_m": 8.438,
+      "door_yaw_deg": null,
+      "faces": 102,
+      "collision": [
+        {
+          "centre": [
+            0.0,
+            0.0,
+            3.0
+          ],
+          "size": [
+            0.728,
+            0.728,
+            6.0
+          ],
+          "yaw_deg": 0.0
+        }
+      ],
+      "ucx": [
+        "UCX_SM_Kit_arvore_b_00"
+      ],
+      "fbx": "SM_Kit_arvore_b.fbx",
+      "materials": [
+        "M_Kit_casca",
+        "M_Kit_folha2"
+      ]
+    },
+    {
+      "name": "SM_Kit_arvore_c",
+      "kind": "tree",
+      "footprint_x_m": 2.6,
+      "footprint_y_m": 2.6,
+      "height_m": 4.23,
+      "door_yaw_deg": null,
+      "faces": 90,
+      "collision": [
+        {
+          "centre": [
+            0.0,
+            0.0,
+            1.2
+          ],
+          "size": [
+            0.6,
+            0.6,
+            2.4
+          ],
+          "yaw_deg": 0.0
+        }
+      ],
+      "ucx": [
+        "UCX_SM_Kit_arvore_c_00"
+      ],
+      "fbx": "SM_Kit_arvore_c.fbx",
+      "materials": [
+        "M_Kit_casca",
+        "M_Kit_folha"
+      ]
+    },
+    {
+      "name": "SM_Kit_grama",
+      "kind": "grass",
+      "footprint_x_m": 0.5,
+      "footprint_y_m": 0.5,
+      "height_m": 0.335,
+      "door_yaw_deg": null,
+      "faces": 5,
+      "collision": [
+        {
+          "centre": [
+            0.0,
+            0.0,
+            0.05
+          ],
+          "size": [
+            0.12,
+            0.12,
+            0.1
+          ],
+          "yaw_deg": 0.0
+        }
+      ],
+      "ucx": [
+        "UCX_SM_Kit_grama_00"
+      ],
+      "fbx": "SM_Kit_grama.fbx",
+      "materials": [
+        "M_Kit_folha2",
+        "M_Kit_folha"
+      ]
+    },
+    {
+      "name": "SM_Kit_arbusto",
+      "kind": "bush",
+      "footprint_x_m": 1.8,
+      "footprint_y_m": 1.8,
+      "height_m": 1.12,
+      "door_yaw_deg": null,
+      "faces": 39,
+      "collision": [
+        {
+          "centre": [
+            0.0,
+            0.0,
+            0.22
+          ],
+          "size": [
+            0.7,
+            0.64,
+            0.44
+          ],
+          "yaw_deg": 0.0
+        }
+      ],
+      "ucx": [
+        "UCX_SM_Kit_arbusto_00"
+      ],
+      "fbx": "SM_Kit_arbusto.fbx",
+      "materials": [
+        "M_Kit_folha2",
+        "M_Kit_folha"
+      ]
+    },
+    {
+      "name": "SM_Kit_pedra_a",
+      "kind": "rock",
+      "footprint_x_m": 2.4,
+      "footprint_y_m": 2.0,
+      "height_m": 1.334,
+      "door_yaw_deg": null,
+      "faces": 100,
+      "collision": [
+        {
+          "centre": [
+            0.0,
+            0.0,
+            0.667
+          ],
+          "size": [
+            2.4,
+            2.0,
+            1.334
+          ],
+          "yaw_deg": 0.0
+        }
+      ],
+      "ucx": [
+        "UCX_SM_Kit_pedra_a_00"
+      ],
+      "fbx": "SM_Kit_pedra_a.fbx",
+      "materials": [
+        "M_Kit_pedra"
+      ]
+    },
+    {
+      "name": "SM_Kit_pedra_b",
+      "kind": "rock",
+      "footprint_x_m": 1.3,
+      "footprint_y_m": 1.1,
+      "height_m": 0.729,
+      "door_yaw_deg": null,
+      "faces": 124,
+      "collision": [
+        {
+          "centre": [
+            0.0,
+            0.0,
+            0.365
+          ],
+          "size": [
+            1.3,
+            1.1,
+            0.729
+          ],
+          "yaw_deg": 0.0
+        }
+      ],
+      "ucx": [
+        "UCX_SM_Kit_pedra_b_00"
+      ],
+      "fbx": "SM_Kit_pedra_b.fbx",
+      "materials": [
+        "M_Kit_pedra_esc",
+        "M_Kit_pedra"
+      ]
+    },
+    {
+      "name": "SM_Kit_pedra_c",
+      "kind": "rock",
+      "footprint_x_m": 3.6,
+      "footprint_y_m": 2.8,
+      "height_m": 2.202,
+      "door_yaw_deg": null,
+      "faces": 176,
+      "collision": [
+        {
+          "centre": [
+            0.0,
+            0.0,
+            1.101
+          ],
+          "size": [
+            3.6,
+            2.8,
+            2.202
+          ],
+          "yaw_deg": 0.0
+        }
+      ],
+      "ucx": [
+        "UCX_SM_Kit_pedra_c_00"
+      ],
+      "fbx": "SM_Kit_pedra_c.fbx",
+      "materials": [
+        "M_Kit_pedra",
+        "M_Kit_pedra_esc"
+      ]
+    },
+    {
+      "name": "SM_Kit_toco",
+      "kind": "stump",
+      "footprint_x_m": 1.2,
+      "footprint_y_m": 1.2,
+      "height_m": 0.66,
+      "door_yaw_deg": null,
+      "faces": 112,
+      "collision": [
+        {
+          "centre": [
+            0.0,
+            0.0,
+            0.33
+          ],
+          "size": [
+            1.2,
+            1.2,
+            0.66
+          ],
+          "yaw_deg": 0.0
+        }
+      ],
+      "ucx": [
+        "UCX_SM_Kit_toco_00"
+      ],
+      "fbx": "SM_Kit_toco.fbx",
+      "materials": [
+        "M_Kit_casca",
+        "M_Kit_tabua"
+      ]
+    },
+    {
+      "name": "SM_Kit_barril",
+      "kind": "prop",
+      "footprint_x_m": 0.8,
+      "footprint_y_m": 0.8,
+      "height_m": 0.9,
+      "door_yaw_deg": null,
+      "faces": 248,
+      "collision": [
+        {
+          "centre": [
+            0.0,
+            0.0,
+            0.45
+          ],
+          "size": [
+            0.8,
+            0.8,
+            0.9
+          ],
+          "yaw_deg": 0.0
+        }
+      ],
+      "ucx": [
+        "UCX_SM_Kit_barril_00"
+      ],
+      "fbx": "SM_Kit_barril.fbx",
+      "materials": [
+        "M_Kit_tabua",
+        "M_Kit_metal",
+        "M_Kit_madeira"
+      ]
+    },
+    {
+      "name": "SM_Kit_caixa",
+      "kind": "prop",
+      "footprint_x_m": 0.9,
+      "footprint_y_m": 0.9,
+      "height_m": 0.87,
+      "door_yaw_deg": null,
+      "faces": 104,
+      "collision": [
+        {
+          "centre": [
+            0.0,
+            0.0,
+            0.435
+          ],
+          "size": [
+            0.9,
+            0.9,
+            0.87
+          ],
+          "yaw_deg": 0.0
+        }
+      ],
+      "ucx": [
+        "UCX_SM_Kit_caixa_00"
+      ],
+      "fbx": "SM_Kit_caixa.fbx",
+      "materials": [
+        "M_Kit_tabua",
+        "M_Kit_madeira"
+      ]
+    },
+    {
+      "name": "SM_Kit_mochila",
+      "kind": "prop",
+      "footprint_x_m": 0.52,
+      "footprint_y_m": 0.48,
+      "height_m": 0.695,
+      "door_yaw_deg": null,
+      "faces": 496,
+      "collision": [
+        {
+          "centre": [
+            0.0,
+            0.0,
+            0.34
+          ],
+          "size": [
+            0.36,
+            0.46,
+            0.68
+          ],
+          "yaw_deg": 0.0
+        }
+      ],
+      "ucx": [
+        "UCX_SM_Kit_mochila_00"
+      ],
+      "fbx": "SM_Kit_mochila.fbx",
+      "materials": [
+        "M_Kit_couro",
+        "M_Kit_tabua",
+        "M_Kit_metal",
+        "M_Kit_runa",
+        "M_Kit_pano"
+      ]
+    },
+    {
+      "name": "SM_Kit_galinha",
+      "kind": "beast",
+      "footprint_x_m": 0.34,
+      "footprint_y_m": 0.46,
+      "height_m": 0.336,
+      "door_yaw_deg": null,
+      "faces": 510,
+      "collision": [
+        {
+          "centre": [
+            0.0,
+            0.0,
+            0.17
+          ],
+          "size": [
+            0.3,
+            0.42,
+            0.34
+          ],
+          "yaw_deg": 0.0
+        }
+      ],
+      "ucx": [
+        "UCX_SM_Kit_galinha_00"
+      ],
+      "fbx": "SM_Kit_galinha.fbx",
+      "materials": [
+        "M_Kit_penugem",
+        "M_Kit_bico",
+        "M_Kit_pano",
+        "M_Kit_pena"
+      ]
+    },
+    {
+      "name": "SM_Kit_veado",
+      "kind": "beast",
+      "footprint_x_m": 0.66,
+      "footprint_y_m": 1.7,
+      "height_m": 1.178,
+      "door_yaw_deg": null,
+      "faces": 932,
+      "collision": [
+        {
+          "centre": [
+            0.0,
+            0.0,
+            0.62
+          ],
+          "size": [
+            0.56,
+            1.55,
+            1.24
+          ],
+          "yaw_deg": 0.0
+        }
+      ],
+      "ucx": [
+        "UCX_SM_Kit_veado_00"
+      ],
+      "fbx": "SM_Kit_veado.fbx",
+      "materials": [
+        "M_Kit_pelo",
+        "M_Kit_pena",
+        "M_Kit_bico",
+        "M_Kit_penugem"
+      ]
+    },
+    {
+      "name": "SM_Kit_corvo",
+      "kind": "beast",
+      "footprint_x_m": 0.92,
+      "footprint_y_m": 0.46,
+      "height_m": 0.102,
+      "door_yaw_deg": null,
+      "faces": 374,
+      "collision": [
+        {
+          "centre": [
+            0.0,
+            0.0,
+            0.1
+          ],
+          "size": [
+            0.88,
+            0.42,
+            0.2
+          ],
+          "yaw_deg": 0.0
+        }
+      ],
+      "ucx": [
+        "UCX_SM_Kit_corvo_00"
+      ],
+      "fbx": "SM_Kit_corvo.fbx",
+      "materials": [
+        "M_Kit_pena",
+        "M_Kit_bico"
+      ]
+    },
+    {
+      "name": "SM_Kit_fardo",
+      "kind": "prop",
+      "footprint_x_m": 1.5,
+      "footprint_y_m": 1.1,
+      "height_m": 1.122,
+      "door_yaw_deg": null,
+      "faces": 120,
+      "collision": [
+        {
+          "centre": [
+            0.0,
+            0.0,
+            0.561
+          ],
+          "size": [
+            1.5,
+            1.1,
+            1.122
+          ],
+          "yaw_deg": 0.0
+        }
+      ],
+      "ucx": [
+        "UCX_SM_Kit_fardo_00"
+      ],
+      "fbx": "SM_Kit_fardo.fbx",
+      "materials": [
+        "M_Kit_colmo",
+        "M_Kit_colmo2"
+      ]
+    },
+    {
+      "name": "SM_Kit_fogueira",
+      "kind": "fire",
+      "footprint_x_m": 1.8,
+      "footprint_y_m": 1.8,
+      "height_m": 0.54,
+      "door_yaw_deg": null,
+      "faces": 452,
+      "collision": [
+        {
+          "centre": [
+            0.0,
+            0.0,
+            0.27
+          ],
+          "size": [
+            1.8,
+            1.8,
+            0.54
+          ],
+          "yaw_deg": 0.0
+        }
+      ],
+      "ucx": [
+        "UCX_SM_Kit_fogueira_00"
+      ],
+      "fbx": "SM_Kit_fogueira.fbx",
+      "materials": [
+        "M_Kit_pedra",
+        "M_Kit_pedra_esc",
+        "M_Kit_casca",
+        "M_Kit_brasa"
+      ]
+    },
+    {
+      "name": "SM_Kit_carroca",
+      "kind": "cart",
+      "footprint_x_m": 2.8,
+      "footprint_y_m": 1.7,
+      "height_m": 1.33,
+      "door_yaw_deg": null,
+      "faces": 404,
+      "collision": [
+        {
+          "centre": [
+            0.0,
+            0.0,
+            0.665
+          ],
+          "size": [
+            2.8,
+            1.7,
+            1.33
+          ],
+          "yaw_deg": 0.0
+        }
+      ],
+      "ucx": [
+        "UCX_SM_Kit_carroca_00"
+      ],
+      "fbx": "SM_Kit_carroca.fbx",
+      "materials": [
+        "M_Kit_tabua",
+        "M_Kit_casca",
+        "M_Kit_madeira"
+      ]
+    },
+    {
+      "name": "SM_Kit_bandeira",
+      "kind": "banner",
+      "footprint_x_m": 0.6,
+      "footprint_y_m": 1.6,
+      "height_m": 3.09,
+      "door_yaw_deg": null,
+      "faces": 286,
+      "collision": [
+        {
+          "centre": [
+            0.0,
+            0.0,
+            3.06
+          ],
+          "size": [
+            0.36,
+            1.6,
+            0.26
+          ],
+          "yaw_deg": 0.0
+        }
+      ],
+      "ucx": [
+        "UCX_SM_Kit_bandeira_00"
+      ],
+      "fbx": "SM_Kit_bandeira.fbx",
+      "materials": [
+        "M_Kit_madeira",
+        "M_Kit_pano",
+        "M_Kit_pano2"
+      ]
+    }
+  ]
+}

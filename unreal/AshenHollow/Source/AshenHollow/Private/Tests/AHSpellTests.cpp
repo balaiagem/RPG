@@ -31,6 +31,7 @@ bool FAHSpellTest::RunTest(const FString& Parameters)
     for(int32 I=0;I<AHSpells::Count();++I)
     {
         const auto Id=static_cast<EAHSpell>(I); const auto& S=AHSpells::Get(Id);
+        if(Id==EAHSpell::Shield) continue; // Reactions are exercised by the reaction tests, not action casting.
         auto* Hero=S.Class==EAHHeroClass::Cleric?C:S.Class==EAHHeroClass::Ranger?R:W;
         Hero->Rest(); Hero->GainExperience(2700); Hero->Rest();
         Hero->bPreparingSpells=true; Hero->PreparedSpells.Reset();

@@ -11,6 +11,7 @@ public:
     AAHCombatHUD();
     virtual void DrawHUD() override;
     virtual void NotifyHitBoxClick(FName BoxName) override;
+    virtual void NotifyHitBoxRelease(FName BoxName) override;
     virtual void NotifyHitBoxBeginCursorOver(FName BoxName) override;
     virtual void NotifyHitBoxEndCursorOver(FName BoxName) override;
     bool IsPointerOverInterface() const;
@@ -23,6 +24,15 @@ public:
 private:
     // ── Layout ───────────────────────────────────────────────────────────────
     FName  HoveredBox;
+    FName DragSource;
+    FVector2D DragStart=FVector2D::ZeroVector;
+    int32 SelectedPack=INDEX_NONE;
+    UPROPERTY() TObjectPtr<class UTextureRenderTarget2D> Portrait;
+    UPROPERTY() TObjectPtr<class USceneCaptureComponent2D> PortraitCamera;
+    double NextPortrait=0;
+    void DrawInventorySheet(class AAHCharacter* Hero,class AAHPlayerController* PC,class AAHGameMode* Mode);
+    void DrawItemIcon(const struct FAHItemData* Item,float X,float Y,float Size);
+    void ReleaseInventoryDrag();
     float  Scale           = 1.f;
     float  SmoothedFrameMs = 16.67f;
     float  OffsetX         = 0.f;
@@ -74,4 +84,12 @@ private:
     void DrawTurnBanner(float BannerAge, bool bHero);
     /** "RODADA X" centre banner when the round number increases */
     void DrawRoundBanner(float BannerAge, int32 Round);
+    /**
+     * The minimap: a round, camera-relative map of the ground around you.
+     *
+     * Its own method because it is a hundred and fifty lines and it was
+     * growing inside DrawHUD, where nothing that big belongs.
+     */
+    void DrawMinimap(const class AAHGameMode* Arena, const class AAHCharacter* Hero,
+                     const class AAHPlayerController* PC, float Now);
 };

@@ -84,9 +84,43 @@ struct FAHAncestrySheet
     bool  bBreathWeapon;               // gains the draconic breath action
 };
 
+/**
+ * Fighting Style (SRD 5.1).
+ *
+ * Its own table rather than five more fields on FAHClassSheet: those rows are
+ * positional and already long enough that miscounting one is a real risk, and a
+ * class without a style would need five zeroes in the middle of them.
+ *
+ * Level is the level the style arrives at; 0 means this class never gets one.
+ */
+struct FAHFightingStyle
+{
+    int32 Level;
+    const TCHAR* Name;
+    int32 ArmorBonus;      // Defense
+    int32 RangedAttack;    // Archery
+    int32 MeleeDamage;     // Dueling
+};
+
+/**
+ * Domain, origin, archetype -- the subclass, whatever the class calls it.
+ *
+ * One per class, arriving at the level the SRD gives it: level 1 for the cleric
+ * and the sorcerer, 2 for the wizard, 3 for everyone else. Level 0 would mean a
+ * class without one, and none of the eight is.
+ */
+struct FAHSubclass
+{
+    int32 Level;
+    const TCHAR* Name;     // CAMPEAO
+    const TCHAR* Detail;   // one line, shown on the sheet
+};
+
 namespace AHRules
 {
     const FAHClassSheet&    Class(EAHHeroClass Which);
+    const FAHFightingStyle& Style(EAHHeroClass Which);
+    const FAHSubclass&      Subclass(EAHHeroClass Which);
     const FAHAncestrySheet& Ancestry(EAHAncestry Which);
     int32 ClassCount();
     int32 AncestryCount();

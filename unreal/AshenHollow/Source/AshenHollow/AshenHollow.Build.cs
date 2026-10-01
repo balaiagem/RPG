@@ -11,7 +11,7 @@ public class AshenHollow : ModuleRules
             "Niagara"
         });
         PrivateDependencyModuleNames.AddRange(new string[] {
-            "Json", "JsonUtilities", "NavigationSystem", "AIModule",
+            "Json", "JsonUtilities", "NavigationSystem", "AIModule", "Landscape",
             "Slate", "SlateCore", "RenderCore", "AnimGraphRuntime"
         });
     }

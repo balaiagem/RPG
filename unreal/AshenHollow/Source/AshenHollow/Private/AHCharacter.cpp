@@ -12,6 +12,7 @@
 #include "AHAnimInstance.h"
 #include "AHMagicVisual.h"
 #include "AHEquipmentComponent.h"
+#include "AHLifeAudioComponent.h"
 #include "AHCombatBurst.h"
 #include "AHGameMode.h"
 #include "AHPlayerController.h"
@@ -20,6 +21,8 @@
 #include "NavigationSystem.h"
 #include "EngineUtils.h"
 #include "NiagaraFunctionLibrary.h"
+#include "Materials/MaterialInterface.h"
+#include "Materials/MaterialInstanceDynamic.h"
 
 AAHCharacter::AAHCharacter()
 {
@@ -29,6 +32,7 @@ AAHCharacter::AAHCharacter()
 
     AbilitySystem = CreateDefaultSubobject<UAbilitySystemComponent>(TEXT("AbilitySystem"));
     Equipment = CreateDefaultSubobject<UAHEquipmentComponent>(TEXT("Equipment"));
+    LifeAudio = CreateDefaultSubobject<UAHLifeAudioComponent>(TEXT("LifeAudio"));
 
     GetCapsuleComponent()->InitCapsuleSize(42.f, 96.f);
 
@@ -68,6 +72,12 @@ AAHCharacter::AAHCharacter()
     Camera = CreateDefaultSubobject<UCameraComponent>(TEXT("IsometricCamera"));
     Camera->SetupAttachment(CameraBoom, USpringArmComponent::SocketName);
     Camera->FieldOfView = 43.0f;
+    Camera->PostProcessSettings.bOverride_AutoExposureBias=true;
+    Camera->PostProcessSettings.AutoExposureBias=0.f;
+    Camera->PostProcessSettings.bOverride_BloomIntensity=true;
+    Camera->PostProcessSettings.BloomIntensity=.18f;
+    Camera->PostProcessSettings.bOverride_BloomThreshold=true;
+    Camera->PostProcessSettings.BloomThreshold=1.2f;
     Camera->bUsePawnControlRotation = false;
 
     GetCharacterMovement()->bOrientRotationToMovement  = true;
@@ -95,21 +105,39 @@ static FString AHRollTag(const FAHDiceOutcome& Roll)
     return Tag;
 }
 
+void AAHCharacter::PaintBody(const FLinearColor& Tone)
+{
+    if (!GetMesh()) return;
+    UMaterialInterface* Cloth = LoadObject<UMaterialInterface>(
+        nullptr, TEXT("/Game/AshenHollow/Kit/Materials/M_AH_Corpo"),
+        nullptr, LOAD_NoWarn | LOAD_Quiet);
+    // No material: the kit has not been imported into this project yet. Keep
+    // the mannequin's own skin rather than turning everybody invisible.
+    if (!Cloth) return;
+    const int32 Slots = FMath::Max(1, GetMesh()->GetNumMaterials());
+    for (int32 Slot = 0; Slot < Slots; ++Slot)
+        if (UMaterialInstanceDynamic* Dyed = GetMesh()->CreateDynamicMaterialInstance(Slot, Cloth))
+            Dyed->SetVectorParameterValue(TEXT("Cor"), Tone);
+}
+
 // ── Enemy setup ──────────────────────────────────────────────────────────────
 
-void AAHCharacter::BecomeEnemy()
+void AAHCharacter::BecomeEnemy(int32 AppearanceSeed)
 {
     bEnemy = true;
 
     // Roll the foe's archetype so no two encounters open the same way.
-    FRandomStream Pick; Pick.GenerateNewSeed();
+    FRandomStream Pick(AppearanceSeed); if (!AppearanceSeed) Pick.GenerateNewSeed();
+    EnemyHome = GetActorLocation();
     HeroClass = static_cast<EAHHeroClass>(Pick.RandRange(0, AHRules::ClassCount()-1));
     Ancestry  = static_cast<EAHAncestry>(Pick.RandRange(0, AHRules::AncestryCount()-1));
     ApplySheet(HeroClass);
     InitializeSpellbook();
 
     // Foes are a little tougher than a level-1 hero so a duel lasts a few rounds.
-    MaxHealth += 6;
+    // Four rather than six: a wizard opens with eight hit points, and against
+    // three of these the old margin was not a duel, it was arithmetic.
+    MaxHealth += 4;
     Health = MaxHealth;
 
     EnemyName = AHRules::Class(HeroClass).FoeName;
@@ -117,6 +145,26 @@ void AAHCharacter::BecomeEnemy()
     GetCharacterMovement()->MaxWalkSpeed = 330.f;
     SpawnDefaultController();
     Equipment->Configure(AHRules::Class(HeroClass).Weapon);
+
+    /**
+     * And a colour, so a bandit is not the same grey shape as the man selling
+     * turnips.
+     *
+     * All of them sit in a dark red-to-brown family on purpose: the archetype
+     * tells them apart from each other, and the family tells them apart from
+     * everybody who is not trying to kill you. Readability at thirty metres
+     * beats variety.
+     */
+    static const FLinearColor Blood[] =
+    {
+        FLinearColor(.336f, .086f, .075f), FLinearColor(.258f, .094f, .126f),
+        FLinearColor(.400f, .148f, .062f), FLinearColor(.212f, .118f, .154f),
+        FLinearColor(.296f, .140f, .086f), FLinearColor(.178f, .102f, .108f),
+        FLinearColor(.360f, .180f, .096f), FLinearColor(.240f, .072f, .092f),
+    };
+    const int32 Shade = FMath::Abs(static_cast<int32>(HeroClass))
+                      % static_cast<int32>(UE_ARRAY_COUNT(Blood));
+    PaintBody(Blood[Shade]);
 }
 
 // ── Turn management ───────────────────────────────────────────────────────────
@@ -126,10 +174,15 @@ void AAHCharacter::StartTurn()
     if(BlessTurns>0) --BlessTurns;
     if(GuardTurns>0 && --GuardTurns==0) ArmorClass-=2;
     bSneakUsed=false; bSteadyAim=false; bAimMovementLocked=false; MovementSpentThisTurn=0;
+    bColossusUsed=false;
+    // The arcane Shield stands until the start of your next turn, which is this.
+    if(ShieldTurns>0 && --ShieldTurns==0) ArmorClass-=5;
+    if(SacredTurns>0) --SacredTurns;
     if(MarkTurns>0 && --MarkTurns==0) MarkedTarget.Reset();
     ++TurnsStarted; bBonusSpellCast=false; bLeveledActionSpellCast=false;
     bReckless=false;
     TurnStartTime = GetWorld()->GetTimeSeconds();
+    bPatrolling=false; RepathAt=0; FailedPaths=0; ProgressAt=TurnStartTime; ProgressLocation=GetActorLocation();
 
     // ── Downed: roll death save instead of acting ─────────────────────────────
     if(bDowned)
@@ -334,7 +387,7 @@ void AAHCharacter::Tick(float DeltaSeconds)
             GetCharacterMovement()->StopMovementImmediately();
         }
     }
-    else
+    else if (!bPatrolling)
     {
         GetCharacterMovement()->StopMovementImmediately();
     }
@@ -344,78 +397,17 @@ void AAHCharacter::Tick(float DeltaSeconds)
     // This can knock us down, which ends the turn inside the call.
     UpdateThreatState();
 
-    const float MaxSpeed = bEnemy ? 330.f : bDashing ? 650.f : 480.f;
+    // Ten metres a second was a sprint, not an explorer. Six is a brisk walk
+    // across a 130 m valley and still lets you look at the place.
+    const float MaxSpeed = bEnemy ? (bPatrolling ? 140.f : 330.f)
+                         : bRoaming ? (bSneaking ? 320.f : 620.f)
+                         : bDashing ? 650.f : 480.f;
     GetCharacterMovement()->MaxWalkSpeed =
-        (bTurnActive && !IsBusy())
-        ? FMath::Min(MaxSpeed, Turn.Movement / FMath::Max(DeltaSeconds, .001f))
+        ((bTurnActive || bPatrolling) && !IsBusy())
+        ? (bPatrolling ? MaxSpeed : FMath::Min(MaxSpeed, Turn.Movement / FMath::Max(DeltaSeconds, .001f)))
         : 0.f;
 
-    // ── Enemy AI ──────────────────────────────────────────────────────────────
-    // Note: no !Turn.bAction guard here. A foe that has already attacked must
-    // still be able to move, or it can never break away from melee.
-    if (!bEnemy || !CanAct() || Now < NextThink) return;
-    NextThink = Now + .2f;
-    auto* Mode = Cast<AAHGameMode>(GetWorld()->GetAuthGameMode());
-    if (Mode && Now - Mode->TurnStarted < .65f) return;
-    auto* Hero = Cast<AAHCharacter>(UGameplayStatics::GetPlayerPawn(this, 0));
-    auto* AI   = Cast<AAIController>(GetController());
-    if (!Hero || !Hero->IsAlive() || !AI) return;
-    if (Now < RetreatUntil) return;
-
-    const float ToHero = FVector::Dist2D(GetActorLocation(), Hero->GetActorLocation());
-
-    // A wounded foe breaks away from melee once per encounter. It does not
-    // Disengage, so it eats the hero's opportunity attack on the way out --
-    // which is what makes the player's own reaction visible in a duel.
-    // This is checked before the ability so the action stays unspent: the
-    // GameMode ends a foe's turn 1.2 s after its action is gone, which would
-    // cut the retreat short before it ever leaves the hero's reach.
-    if (!bHasRetreated && MaxHealth > 0 && Health * 2 < MaxHealth
-        && ToHero < ThreatReach && Turn.Movement > 300.f)
-    {
-        bHasRetreated = true;
-        RetreatUntil  = Now + 3.f;
-        const FVector Away = GetActorLocation()
-            + (GetActorLocation() - Hero->GetActorLocation()).GetSafeNormal2D() * 450.f;
-        AI->MoveToLocation(Away, 25.f, false, true, true);
-        Hero->AddLog(EnemyName + TEXT(" está ferido e recua do corpo a corpo."));
-        return;
-    }
-
-    // Spend the archetype's ability when it is actually worth something, so the
-    // rolled foe plays differently and not just with different numbers.
-    if (CanUseClassAbility())
-    {
-        const bool bHurt  = Health * 2 < MaxHealth;
-        const bool bWorth =
-            HeroClass == EAHHeroClass::Barbarian ? ToHero < 600.f :
-            HeroClass == EAHHeroClass::Wizard    ? true
-                                                 : bHurt;   // Fighter and Cleric heal
-        if (bWorth) { AI->StopMovement(); UseClassAbility(); return; }
-    }
-
-    if (CanUseRacialAbility() && ToHero <= BreathReach)
-    {
-        AI->StopMovement();
-        UseRacialAbility();
-        return;
-    }
-
-    if (HasRangedAttack() && Turn.bAction && ToHero <= RangedReach())
-    {
-        AI->StopMovement();
-        if (TryRangedAttack(Hero)) return;
-    }
-
-    if (ToHero < 125.f)
-    {
-        AI->StopMovement();
-        if (Turn.bAction) TryAttack(Hero);
-    }
-    else if (Turn.Movement > 1.f)
-    {
-        AI->MoveToActor(Hero, 5.f);
-    }
+    TickEnemyAI(Now);
 }
 
 // ── Reactions ─────────────────────────────────────────────────────────────────
@@ -482,13 +474,14 @@ bool AAHCharacter::TryOpportunityAttack(AAHCharacter* Mover, bool bConfirmed)
 
     FAHDiceOutcome Result = UAHDiceRules::RollAttack(
         Dice,
-        AttackBonus+(BlessTurns>0?Dice.RandRange(1,4):0),
+        AttackRollBonus()+(BlessTurns>0?Dice.RandRange(1,4):0),
         Mover->ArmorClass,
-        1,
+        WeaponDice(),
         DamageSides,
-        DamageModifier + (bRaging ? 2 : 0),
+        MeleeDamageBonus(),
         ((Mover->bReckless || GuidingAdvantage)?1:0)-(Mover->bDodging?1:0),
         IsLucky());
+    ApplySubclassCrit(Result, DamageSides);
 
     // Cosmetic swing only. A reaction must never make the reacting character
     // busy, so bIsAttacking / AnimationEnds are deliberately left untouched.
@@ -579,7 +572,8 @@ UAnimationAsset* AAHCharacter::WeaponClip() const
     // EAHWeaponKind indexes WeaponAnimations. The bare subscript that used to sit
     // in PlayAttack would have asserted the first time a new weapon kind was added
     // without its clip, so every reader goes through this guard instead.
-    const int32 Index=static_cast<int32>(AHRules::Class(HeroClass).Weapon);
+    const auto* Worn=bEnemy?nullptr:AHItems::Find(Equipped[static_cast<int32>(EAHSlot::MaoPrincipal)]);
+    const int32 Index=static_cast<int32>(Worn?Worn->Arte:AHRules::Class(HeroClass).Weapon);
     return WeaponAnimations.IsValidIndex(Index) ? WeaponAnimations[Index].Get() : AttackAnimation.Get();
 }
 void AAHCharacter::PlayAttack()
@@ -634,10 +628,11 @@ void AAHCharacter::PlayGesture(UAnimationAsset* Asset)
     bIsAttacking=true; bImpactResolved=true; ImpactAt=-1.f;
 }
 
-bool AAHCharacter::TryAttack(AAHCharacter* Target)
+bool AAHCharacter::TryAttack(AAHCharacter* Target, bool bBonusAction)
 {
-    if (!CanAct() || !Turn.bAction || !IsValid(Target) || !Target->IsAlive() || Target->bEnemy == bEnemy)
+    if (!CanAct() || !IsValid(Target) || !Target->IsAlive() || Target->bEnemy == bEnemy)
         return false;
+    if (bBonusAction ? !Turn.bBonus : !Turn.bAction) return false;
     if (FVector::Dist2D(GetActorLocation(), Target->GetActorLocation()) > 190.f)
     {
         Feedback = TEXT("Alvo fora do alcance corpo a corpo");
@@ -652,7 +647,7 @@ bool AAHCharacter::TryAttack(AAHCharacter* Target)
         return false;
     }
 
-    Turn.SpendAction();
+    if (bBonusAction) Turn.SpendBonus(); else Turn.SpendAction();
     if (GetController()) GetController()->StopMovement();
     GetCharacterMovement()->StopMovementImmediately();
     SetActorRotation(FRotator(0, (Target->GetActorLocation() - GetActorLocation()).Rotation().Yaw, 0));
@@ -660,15 +655,18 @@ bool AAHCharacter::TryAttack(AAHCharacter* Target)
     // Cover counts in melee too, by the book. At 190 cm of reach it will rarely
     // fire, but a rule that only half applies is worse than one that does not.
     const EAHCover MeleeCover = Target->CoverFrom(this);
+    // Assassinate: nobody has found their feet in the first round.
+    const bool bAssassin = HeroClass==EAHHeroClass::Rogue && Level>=3 && CombatRound()==1;
     PendingRoll = UAHDiceRules::RollAttack(
         Dice,
-        AttackBonus+(BlessTurns>0?Dice.RandRange(1,4):0),
+        AttackRollBonus()+(BlessTurns>0?Dice.RandRange(1,4):0),
         Target->ArmorClass + AHArena::ArmorBonus(MeleeCover),
-        1,
+        WeaponDice(),
         DamageSides,
-        DamageModifier + (bRaging?2:0),
-        ((bSteadyAim || bReckless || Target->bReckless || Target->HasGuidingMark() || HasHighGroundOn(Target))?1:0)-(Target->bDodging?1:0),IsLucky());
-    Target->GuidingSource.Reset(); bSteadyAim=false;
+        MeleeDamageBonus(),
+        ((bHidden || bSteadyAim || bAssassin || bReckless || Target->bReckless || Target->HasGuidingMark() || HasHighGroundOn(Target))?1:0)-(Target->bDodging?1:0),IsLucky());
+    ApplySubclassCrit(PendingRoll, DamageSides);
+    Target->GuidingSource.Reset(); bSteadyAim=false; bHidden=false;
     PendingTarget = Target;
     bAttackedSinceTurnEnd=true;
 
@@ -761,14 +759,13 @@ bool AAHCharacter::IsThreatenedInMelee() const
 
 bool AAHCharacter::TryRangedAttack(AAHCharacter* Target)
 {
-    const FAHClassSheet& Sheet = AHRules::Class(HeroClass);
-    if (Sheet.RangedRange <= 0) return false;
+    if (RangedRange <= 0) return false;
     if (!CanAct() || !Turn.bAction) return false;
     if (!IsValid(Target) || !Target->IsAlive() || Target->bEnemy == bEnemy) return false;
 
-    if (FVector::Dist2D(GetActorLocation(), Target->GetActorLocation()) > Sheet.RangedRange)
+    if (FVector::Dist2D(GetActorLocation(), Target->GetActorLocation()) > RangedRange)
     {
-        Feedback = FString::Printf(TEXT("Alvo além do alcance de %.0f m"), Sheet.RangedRange/100.f);
+        Feedback = FString::Printf(TEXT("Alvo além do alcance de %.0f m"), RangedRange/100.f);
         return false;
     }
     FHitResult Obstacle;
@@ -791,17 +788,19 @@ bool AAHCharacter::TryRangedAttack(AAHCharacter* Target)
     // Advantage sources stay grouped in one ||: high ground and reckless attack
     // together are still advantage, never two steps of it.
     const EAHCover ShotCover = Target->CoverFrom(this);
+    const bool bShotAssassin = HeroClass==EAHHeroClass::Rogue && Level>=3 && CombatRound()==1;
     PendingRoll = UAHDiceRules::RollAttack(
-        Dice, AttackBonus+(BlessTurns>0?Dice.RandRange(1,4):0),
+        Dice, RangedAttackBonus()+(SacredTurns>0?2:0)+(BlessTurns>0?Dice.RandRange(1,4):0),
         Target->ArmorClass + AHArena::ArmorBonus(ShotCover), 1,
-        Sheet.RangedSides, Sheet.RangedBonus,
-        ((bSteadyAim || bReckless || Target->bReckless || Target->HasGuidingMark() || HasHighGroundOn(Target)) ? 1 : 0)
+        RangedSides, RangedBonus,
+        ((bHidden || bSteadyAim || bShotAssassin || bReckless || Target->bReckless || Target->HasGuidingMark() || HasHighGroundOn(Target)) ? 1 : 0)
             - ((Target->bDodging || bCrowded) ? 1 : 0),
         IsLucky());
+    ApplySubclassCrit(PendingRoll, RangedSides);
     PendingTarget = Target;
-    Target->GuidingSource.Reset(); bSteadyAim=false;
+    Target->GuidingSource.Reset(); bSteadyAim=false; bHidden=false;
     // A little tolerance so the target drifting a step does not void the shot.
-    PendingRange  = static_cast<float>(Sheet.RangedRange) + 80.f;
+    PendingRange  = static_cast<float>(RangedRange) + 80.f;
     bAttackedSinceTurnEnd = true;
 
     PlayAttack();
@@ -813,7 +812,7 @@ bool AAHCharacter::TryRangedAttack(AAHCharacter* Target)
         Why += FString::Printf(TEXT(" · %s do alvo: +%d CA"),
                                AHArena::CoverName(ShotCover), AHArena::ArmorBonus(ShotCover));
     if (HasHighGroundOn(Target)) Why += TEXT(" · vantagem: terreno elevado");
-    Feedback = FString::Printf(TEXT("%s%s"), Sheet.RangedName, *Why);
+    Feedback = FString::Printf(TEXT("Disparo%s"), *Why);
     return true;
 }
 
@@ -878,6 +877,48 @@ void AAHCharacter::ResolveImpact()
         : (bEnemy ? EnemyName + TEXT(" / ATAQUE")  : FString(TEXT("SEU ATAQUE")));
     Viewer->LastRollTime  = GetWorld()->GetTimeSeconds();
 
+    // Last chance to not be hit: stop here and ask.
+    //
+    // The prompt pauses the game, so this swing cannot finish inside the call
+    // that asked. It is parked on this character and picked up again by
+    // ResumeShieldedImpact, which re-enters this function with the answer
+    // already folded into PendingRoll -- bShieldAsked is what stops that second
+    // pass from asking all over again.
+    if (Result.bSuccess && !bShieldAsked && !Target->bEnemy
+        && AHSpells::ForClass(EAHSpell::Shield, Target->HeroClass))
+    {
+        const FString Refusal = Target->ShieldRefusal();
+        UE_LOG(LogTemp, Display,
+            TEXT("AH_SHIELD %s (total %d, CA %d, reacao %d, espacos %d)"),
+            Refusal.IsEmpty() ? TEXT("OFERECIDO") : *Refusal,
+            Result.Total, Result.Target, Target->Turn.bReaction ? 1 : 0, Target->ClassCharges);
+
+        if (Refusal.IsEmpty())
+        {
+            auto* Defender = Cast<AAHPlayerController>(Target->GetController());
+            if (Defender && Defender->OfferReaction(this, EAHReaction::Shield))
+            {
+                HeldTarget    = Target;
+                HeldRoll      = Result;
+                HeldShotRange = ShotRange;
+                bShieldAsked  = true;
+                PendingTarget = nullptr;
+                return;
+            }
+            // The pause was refused. Put the Shield up anyway rather than let
+            // the only reaction spell in the game quietly do nothing -- erring
+            // towards the spell working is the right side to err on.
+            Target->RaiseShield(Result);
+            Viewer->LastRoll = Result;
+        }
+        else
+        {
+            // A rule that correctly does nothing still has to say so, or it is
+            // indistinguishable from a rule that is broken.
+            Target->AddLog(FString::Printf(TEXT("Escudo nao oferecido: %s"), *Refusal));
+        }
+    }
+
     if (Result.bSuccess)
     {
         // A melee hit on an unconscious creature within reach is a critical (PHB 292).
@@ -914,6 +955,25 @@ void AAHCharacter::ResolveImpact()
         Result.bSuccess, Result.Damage);
 }
 
+void AAHCharacter::ResumeShieldedImpact(bool bShield)
+{
+    auto* Target = HeldTarget.Get();
+    HeldTarget = nullptr;
+    if (!IsValid(Target)) { bShieldAsked = false; return; }
+
+    PendingTarget = Target;
+    PendingRoll   = HeldRoll;
+    PendingRange  = HeldShotRange;
+    if (bShield) Target->RaiseShield(PendingRoll);
+    else         Target->AddLog(TEXT("Escudo recusado: a reacao fica guardada"));
+
+    // Straight back through the same door. Everything the second pass needs is
+    // in the pending fields, and bShieldAsked keeps it from asking again.
+    bImpactResolved = false;
+    ResolveImpact();
+    bShieldAsked = false;
+}
+
 // ── Other actions ─────────────────────────────────────────────────────────────
 
 void AAHCharacter::ReceiveHit(int32 Damage, EAHDamageType Type, int32 RadiantBonus, bool bCriticalHit)
@@ -924,6 +984,10 @@ void AAHCharacter::ReceiveHit(int32 Damage, EAHDamageType Type, int32 RadiantBon
     if (Blood.bFireResistant && Type == EAHDamageType::Fire) Damage/=2;
     Damage+=RadiantBonus;
     if (Damage <= 0) return;
+    if(LifeAudio) LifeAudio->Impact();
+    if(bEnemy)
+        if(auto* Mode=GetWorld()->GetAuthGameMode<AAHGameMode>())
+        { if(Mode->IsExploring()) Mode->EngageWith(this); Mode->DrawInBystanders(this); }
     if((GuardTurns>0 || BlessTurns>0 || MarkTurns>0) && (Damage>=Health+TempHP || !UAHDiceRules::RollCheck(Dice,ConcentrationModifier()+(BlessTurns>0?Dice.RandRange(1,4):0),FMath::Max(10,Damage/2),0,IsLucky()).bSuccess))
     { if(GuardTurns>0) ArmorClass-=2; GuardTurns=BlessTurns=MarkTurns=0; MarkedTarget.Reset(); AddLog(TEXT("Concentracao encerrada")); }
     bDamagedSinceTurnEnd=true;
@@ -984,6 +1048,9 @@ void AAHCharacter::ReceiveHit(int32 Damage, EAHDamageType Type, int32 RadiantBon
         return;
     }
 
+    if(bEnemy && !bLootDropped)
+        if(auto* Mode=GetWorld()->GetAuthGameMode<AAHGameMode>()) { bLootDropped=true; Mode->DropLoot(this); }
+
     // ── Massive damage: leftover damage meeting your maximum kills outright ──
     // PHB 197. No death saves, no stabilising.
     if(Health<=0 && !bDowned && Overkill>=MaxHealth)
@@ -999,6 +1066,13 @@ void AAHCharacter::ReceiveHit(int32 Damage, EAHDamageType Type, int32 RadiantBon
         if(DeathAnimation) GetMesh()->PlayAnimation(DeathAnimation,false);
         ImpactText=FString::Printf(TEXT("-%d  FATAL!"),LastDamage);
         AddLog(TEXT("Dano massivo: morte instantanea, sem salvaguardas."));
+        // Said out loud, with the numbers, because "it did not roll death
+        // saves" and "it killed me outright by the massive-damage rule" look
+        // identical from the outside -- and one of them is a bug while the
+        // other is PHB 197. The log has to be able to tell them apart.
+        UE_LOG(LogTemp, Warning,
+               TEXT("AH_DOWN %s MORTE DIRETA: dano %d, sobra %d, PV max %d (regra de dano massivo)"),
+               *GetName(), LastDamage, Overkill, MaxHealth);
         Feedback=TEXT("Morto por dano massivo.");
         return;
     }
@@ -1019,6 +1093,9 @@ void AAHCharacter::ReceiveHit(int32 Damage, EAHDamageType Type, int32 RadiantBon
         if(IsValid(MagicVisual)) MagicVisual->Destroy(); MagicVisual=nullptr;
         // Play collapse / fall animation; do NOT disable movement yet so we can still be targeted
         if (DeathAnimation) GetMesh()->PlayAnimation(DeathAnimation, false);
+        UE_LOG(LogTemp, Warning,
+               TEXT("AH_DOWN %s NOCAUTEADO: dano %d, PV max %d -- salvaguardas comecam no proximo turno dele"),
+               *GetName(), LastDamage, MaxHealth);
         AddLog(TEXT("Nocauteado! Salvaguardas de morte a seguir."));
         Feedback = TEXT("Nocauteado - role salvaguardas de morte");
     }
@@ -1074,6 +1151,16 @@ void AAHCharacter::ZoomCamera(float Steps)
     CameraReachTarget = FMath::Clamp(CameraReachTarget + Steps * 260.f, 1200.f, 3600.f);
 }
 
+void AAHCharacter::ToggleSneak()
+{
+    if(bEnemy || !IsAlive()) return;
+    bSneaking=!bSneaking;
+    Feedback = bSneaking
+        ? TEXT("Furtivo: passo curto, os acampamentos notam voce muito mais perto. Ataque daqui para emboscar.")
+        : TEXT("De pe: passo normal.");
+    AddLog(Feedback);
+}
+
 void AAHCharacter::Dash()
 {
     if (!CanAct() || bAimMovementLocked || !Turn.SpendAction()) return;
@@ -1085,12 +1172,12 @@ void AAHCharacter::Dash()
 
 int32 AAHCharacter::SpellSaveDC() const
 {
-    return 8 + UAHDiceRules::ProficiencyBonus(Level) + AHRules::Class(HeroClass).CastingModifier;
+    return bEnemy ? 8 + UAHDiceRules::ProficiencyBonus(Level) + AHRules::Class(HeroClass).CastingModifier : SpellDC;
 }
 
 int32 AAHCharacter::SpellAttackBonus() const
 {
-    return UAHDiceRules::ProficiencyBonus(Level) + AHRules::Class(HeroClass).CastingModifier;
+    return bEnemy ? UAHDiceRules::ProficiencyBonus(Level) + AHRules::Class(HeroClass).CastingModifier : SpellAttack;
 }
 
 int32 AAHCharacter::ApplyHealing(int32 Amount)
@@ -1158,6 +1245,26 @@ void AAHCharacter::ApplySheet(EAHHeroClass Choice)
     MaxHealth=Sheet.MaxHealth; ArmorClass=Sheet.ArmorClass; AttackBonus=Sheet.AttackBonus;
     DamageSides=Sheet.DamageSides; DamageModifier=Sheet.DamageModifier;
     InitiativeBonus=Sheet.InitiativeBonus; ClassCharges=Sheet.ClassCharges;
+    /**
+     * The ranged option, copied onto the character.
+     *
+     * It used to be read straight off the class table at the moment of the
+     * shot, which said "a ranger can shoot because he is a ranger". Now it
+     * says "because he is holding a bow" -- so these three are the fallback
+     * for anybody with no kit, which is every foe in the world, and
+     * RecomputeSheet overwrites them for anybody who has one.
+     */
+    RangedRange=Sheet.RangedRange; RangedSides=Sheet.RangedSides; RangedBonus=Sheet.RangedBonus;
+
+    // Fighting Style. Archery and Duelling are read at the roll, because the
+    // roll is the only place they mean anything; Defense is armour, so it has to
+    // be folded into the number everything else reads.
+    const FAHFightingStyle& Style=AHRules::Style(Choice);
+    if(Style.Level>0 && Level>=Style.Level) ArmorClass+=Style.ArmorBonus;
+
+    // Draconic Resilience: scales that are armour and blood that is thicker.
+    // Level 1, so it belongs on the sheet rather than in the level-up path.
+    if(Choice==EAHHeroClass::Sorcerer) { ArmorClass+=1; MaxHealth+=Level; }
 
     const FAHAncestrySheet& Blood=AHRules::Ancestry(Ancestry);
     InitiativeBonus+=Blood.InitiativeBonus;
@@ -1174,6 +1281,34 @@ void AAHCharacter::ChooseClass(EAHHeroClass Choice)
     Health=MaxHealth; bAncestrySelected=true; bCharacterReady=true;
     InitializeSpellbook();
     Equipment->Configure(AHRules::Class(HeroClass).Weapon);
+
+    /**
+     * And then the sheet takes over from the class table.
+     *
+     * ApplySheet above still runs and still writes the old constants -- it is
+     * what every foe uses, and it is what this character falls back to if
+     * anything here fails. RecomputeSheet then overwrites those numbers with
+     * the ones his abilities and his kit actually earn. Two passes is one more
+     * than necessary and it is the cheapest insurance there is: the character
+     * is never in a half-built state.
+     */
+    if(!bAbilitiesChosen)
+    {
+        const int32* Suggested = AHSheet::Recommended(HeroClass);
+        for(int32 A=0;A<static_cast<int32>(EAHAbility::Count);++A)
+            Abilities.Score[A]=Suggested[A];
+    }
+    TakeKit(StartingKit < 0 ? 0 : StartingKit);
+    UE_LOG(LogTemp, Display,
+           TEXT("AH_FICHA %s: FOR %d DES %d CON %d INT %d SAB %d CAR %d -> CA %d, PV %d, ataque +%d, 1d%d%+d"),
+           *ClassName(Choice),
+           Abilities.Raw(EAHAbility::Forca), Abilities.Raw(EAHAbility::Destreza),
+           Abilities.Raw(EAHAbility::Constituicao), Abilities.Raw(EAHAbility::Inteligencia),
+           Abilities.Raw(EAHAbility::Sabedoria), Abilities.Raw(EAHAbility::Carisma),
+           ArmorClass, MaxHealth, AttackBonus, DamageSides, DamageModifier);
+    // The class's own colour, which is the one the HUD has always used for it,
+    // so the figure on the ground matches the panel that describes him.
+    PaintBody(AHRules::Class(HeroClass).Colour);
     Feedback=ClassName(Choice)+TEXT(" / nível 1");
 }
 void AAHCharacter::ChooseAncestry(EAHAncestry Choice)
@@ -1265,3 +1400,181 @@ void AAHCharacter::UseClassAbility()
 
 }
 UAbilitySystemComponent* AAHCharacter::GetAbilitySystemComponent() const { return AbilitySystem; }
+
+// ── The character sheet ──────────────────────────────────────────────────────
+
+void AAHCharacter::RecomputeSheet(bool bFull)
+{
+    /**
+     * Foes are left alone, and that is the safety property this whole feature
+     * rests on.
+     *
+     * Every enemy in the world is built by BecomeEnemy from the class table's
+     * hand-tuned constants, and eighteen of them can be standing at once. If
+     * the ability system reached them too, the day it landed would be the day
+     * every fight in the game changed difficulty for reasons nobody could
+     * point at. They get abilities when they get a kit, and not before.
+     */
+    if (bEnemy) return;
+
+    const AHSheet::FAHDerived Made =
+        AHSheet::Derive(HeroClass, Ancestry, Level, Abilities, Equipped);
+
+    const int32 WasMax = FMath::Max(1, MaxHealth);
+    MaxHealth       = Made.MaxHealth + AidBonus + (Feat==1?2*Level:0);
+    ArmorClass      = Made.ArmorClass + (GuardTurns>0?2:0) + (ShieldTurns>0?5:0) + MageArmorBonus;
+    AttackBonus     = Made.AttackBonus;
+    DamageSides     = Made.DamageSides;
+    DamageModifier  = Made.DamageModifier;
+    InitiativeBonus = Made.InitiativeBonus + (Feat==2?5:0);
+    BaseMovement    = Made.Movement + (Feat==3?300:0);
+    RangedRange     = Made.RangedRange;
+    RangedSides     = Made.RangedSides;
+    // A bow's damage bonus is the same Dexterity the shot is aimed with.
+    RangedBonus     = Made.RangedRange > 0 ? Made.DamageModifier : 0;
+    SpellAttack     = Made.SpellAttack;
+    SpellDC         = Made.SpellDC;
+    bOverloaded     = Made.bOverloaded;
+
+    // Draconic Resilience is a level-1 class feature rather than a piece of
+    // equipment, so it survives the rewrite exactly where it was.
+
+    // A wounded character keeps his wound. Changing armour must not heal you,
+    // and a level up must not hand you a full bar either -- it hands you the
+    // points it added.
+    Health = bFull ? MaxHealth : Health<=0 ? 0
+                   : FMath::Clamp(Health + (MaxHealth - WasMax), 1, MaxHealth);
+
+    // The model in his hands follows the weapon in his hands.
+    if (Equipment) Equipment->Configure(Made.Art);
+}
+
+FString AAHCharacter::Equip(const FString& Id)
+{
+    const FAHItemData* Thing = AHItems::Find(Id);
+    if (!Thing || Thing->Slot == EAHSlot::Nenhum) return FString();
+    const int32 Where = static_cast<int32>(Thing->Slot);
+    const FString Came = Equipped[Where];
+    Equipped[Where] = Id;
+
+    /**
+     * Two hands means two hands.
+     *
+     * A greatsword and a shield is the commonest illegal loadout there is,
+     * and the honest place to refuse it is here rather than in the screen
+     * that shows it -- a rule that only a button enforces is a rule the next
+     * button forgets.
+     */
+    if (Thing->bDuasMaos && Thing->Slot == EAHSlot::MaoPrincipal)
+    {
+        const int32 OffHand = static_cast<int32>(EAHSlot::MaoSecundaria);
+        if (!Equipped[OffHand].IsEmpty())
+        {
+            Carry(Equipped[OffHand]);
+            Equipped[OffHand].Reset();
+            AddLog(TEXT("Precisa das duas maos: o que estava na outra foi para a mochila."));
+        }
+    }
+    if (Thing->Slot == EAHSlot::MaoSecundaria)
+    {
+        const FAHItemData* Main = AHItems::Find(Equipped[static_cast<int32>(EAHSlot::MaoPrincipal)]);
+        if (Main && Main->bDuasMaos)
+        {
+            Equipped[Where] = Came;              // put it back: no room
+            AddLog(TEXT("Sua arma ocupa as duas maos."));
+            return Id;
+        }
+    }
+    RecomputeSheet();
+    return Came;
+}
+
+void AAHCharacter::Unequip(EAHSlot Slot)
+{
+    const auto* Mode=GetWorld()->GetAuthGameMode<AAHGameMode>();
+    if(bEnemy || !IsAlive() || IsBusy() || (Mode && !Mode->IsExploring())) return;
+    const int32 Where = static_cast<int32>(Slot);
+    if (Where < 0 || Where >= static_cast<int32>(EAHSlot::Count)) return;
+    if (Equipped[Where].IsEmpty()) return;
+    Carry(Equipped[Where]);
+    Equipped[Where].Reset();
+    RecomputeSheet();
+}
+
+void AAHCharacter::Carry(const FString& Id, int32 Many)
+{
+    if (Id.IsEmpty() || Many <= 0 || !AHItems::Find(Id)) return;
+    for (FAHCarried& Held : Backpack)
+        if (Held.Id == Id) { Held.Many += Many; return; }
+    Backpack.Add({ Id, Many });
+}
+
+void AAHCharacter::TakeKit(int32 Which)
+{
+    StartingKit = FMath::Clamp(Which, 0, AHItems::KitsPerClass - 1);
+    for (int32 Slot = 0; Slot < static_cast<int32>(EAHSlot::Count); ++Slot)
+        Equipped[Slot].Reset();
+    Backpack.Reset();
+
+    const AHItems::FAHKit& Kit = AHItems::Kit(HeroClass, StartingKit);
+    for (int32 I = 0; I < 8 && Kit.Itens[I]; ++I)
+    {
+        const FAHItemData* Thing = AHItems::Find(FString(Kit.Itens[I]));
+        if (!Thing) continue;
+        const int32 Where = static_cast<int32>(Thing->Slot);
+        // Worn if its slot is free, carried otherwise -- which is how a kit
+        // with two daggers puts one in your hand and one in the pack.
+        if (Thing->Slot != EAHSlot::Nenhum && Equipped[Where].IsEmpty())
+            Equipped[Where] = FString(Thing->Id);
+        else
+            Carry(FString(Thing->Id));
+    }
+    RecomputeSheet(/*bFull*/ true);
+}
+
+void AAHCharacter::PickClass(EAHHeroClass Choice)
+{
+    if(bCharacterReady || bEnemy || static_cast<int32>(Choice)>=AHRules::ClassCount()) return;
+    HeroClass    = Choice;
+    bClassPicked = true;
+    // The suggested spread, until the player moves something. Changing your
+    // mind about the class should change the suggestion with it -- and must
+    // not throw away points you have already spent yourself.
+    if(!bAbilitiesChosen)
+    {
+        const int32* Suggested = AHSheet::Recommended(HeroClass);
+        for(int32 A=0;A<static_cast<int32>(EAHAbility::Count);++A)
+            Abilities.Score[A]=Suggested[A];
+    }
+}
+
+bool AAHCharacter::BuyAbility(EAHAbility Which, int32 Delta)
+{
+    if(bCharacterReady || bEnemy || Delta==0) return false;
+    const int32 Slot = static_cast<int32>(Which);
+    if(Slot<0 || Slot>=static_cast<int32>(EAHAbility::Count)) return false;
+
+    const int32 Was = Abilities.Score[Slot];
+    const int32 Want = Was + (Delta>0 ? 1 : -1);
+    if(Want < AHSheet::BuyFloor || Want > AHSheet::BuyCeil) return false;
+
+    Abilities.Score[Slot] = Want;
+    // Refused rather than clamped: a screen that silently does nothing when
+    // you are out of points is a screen you poke at; one where the button is
+    // dark tells you why.
+    if(AHSheet::Spent(Abilities) > AHSheet::BuyBudget)
+    {
+        Abilities.Score[Slot] = Was;
+        return false;
+    }
+    bAbilitiesChosen = true;
+    return true;
+}
+
+void AAHCharacter::BeginWith(int32 Kit)
+{
+    if(bCharacterReady || bEnemy || !bClassPicked || !bAncestrySelected || !bPointsDone || !AHSheet::Legal(Abilities)) return;
+    StartingKit      = FMath::Clamp(Kit, 0, AHItems::KitsPerClass - 1);
+    bAbilitiesChosen = true;
+    ChooseClass(HeroClass);
+}

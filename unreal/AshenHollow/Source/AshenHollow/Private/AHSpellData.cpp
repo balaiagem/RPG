@@ -18,7 +18,11 @@ const FAHSpellDefinition Spells[]={
 {EAHSpell::BurningHands,EAHHeroClass::Wizard,TEXT("MAOS FLAMEJANTES"),TEXT("I | acao | cone 4,5 m | DES CD13; 3d6 fogo, metade ao salvar"),1,false,true,450},
 {EAHSpell::Thunderwave,EAHHeroClass::Wizard,TEXT("ONDA TROVEJANTE"),TEXT("I | acao | cubo frontal 4,5 m | CON CD13; 2d8, metade ao salvar"),1,false,true,450},
 {EAHSpell::HuntersMark,EAHHeroClass::Ranger,TEXT("MARCA DO CACADOR"),TEXT("I | bonus | 27 m | +1d6 em ataques de arma; concentracao"),1,true,true,2700},
-{EAHSpell::Goodberry,EAHHeroClass::Ranger,TEXT("BOM FRUTO"),TEXT("I | acao | cria 10 frutos; consumir um usa acao e cura 1 PV"),1,false,false,0}
+{EAHSpell::Goodberry,EAHHeroClass::Ranger,TEXT("BOM FRUTO"),TEXT("I | acao | cria 10 frutos; consumir um usa acao e cura 1 PV"),1,false,false,0},
+// Never prepared, always there. It costs a first-circle slot when it fires and
+// nothing at all the rest of the time -- a reaction you have to remember to
+// pack is a reaction you discover you did not pack while being hit.
+{EAHSpell::Shield,EAHHeroClass::Wizard,TEXT("ESCUDO ARCANO"),TEXT("I | REACAO | sempre disponivel, nao ocupa preparacao | +5 CA ate o seu proximo turno"),1,false,false,0}
 };
 static_assert(UE_ARRAY_COUNT(Spells)==static_cast<int32>(EAHSpell::Count));
 }

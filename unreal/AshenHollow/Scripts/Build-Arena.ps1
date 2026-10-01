@@ -37,7 +37,7 @@ if ($exit -ne 0) {
     Write-Host "Unreal registrou erros (codigo $exit), mas a arena foi construida. Detalhes em $log" -ForegroundColor DarkYellow
 }
 Write-Host $built.Line.Trim() -ForegroundColor Green
-Select-String -LiteralPath $log -Pattern 'AH_ARENA_NAV|AH_ARENA_DYNAMIC' | ForEach-Object { Write-Host $_.Line.Trim() -ForegroundColor Green }
+Select-String -LiteralPath $log -Pattern 'AH_ARENA_NAV|AH_ARENA_DYNAMIC|AH_ARENA_GROUND' | ForEach-Object { Write-Host $_.Line.Trim() -ForegroundColor Green }
 
 $problems = Select-String -LiteralPath $log -Pattern 'AH_ARENA_PROBLEMS'
 if ($problems) {

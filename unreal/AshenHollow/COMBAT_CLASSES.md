@@ -480,3 +480,59 @@ angulo grande. Dobrar os dois no mesmo quadro garante que nao ha nada para ver.
 angulos ela pode atravessar uma casa. Com o giro disponivel da para sair de la, e
 ligar o teste de colisao faria a camera saltar para perto sem aviso. Se incomodar,
 o certo e desbotar o que esta na frente, nao mover a camera.
+
+## Explorar e lutar: o jogo ganha duas fases (2026-09-24)
+
+Ate aqui o jogo estava **sempre** em modo de turno. Nao existia explorar: voce
+nascia a dez metros de um inimigo e a iniciativa rolava sozinha. O pedido do Lucas
+foi "um mundo livre pra explorar", e isso nao e um mapa maior, e um laco diferente.
+
+`AHGameMode` agora tem duas fases, que e o laco que o BG3 usa:
+
+- **Explorando** — movimento livre, inimigos parados, sem turno. O combate comeca
+  quando voce entra no raio de alerta de um acampamento, ou quando escolhe um
+  inimigo como alvo (nesse caso a iniciativa rola e voce age na sua vez, em vez de
+  golpear na hora).
+- **Combate** — a ordem de iniciativa, exatamente como sempre foi.
+- Limpo o grupo, o mundo volta para as suas maos.
+
+### Como o modo livre foi feito sem reescrever tudo
+
+Enquanto explora, o heroi fica com `bTurnActive` ligado e o orcamento de movimento
+reabastecido a cada quadro. Nenhuma das cem verificacoes espalhadas pelo codigo
+precisou aprender sobre uma segunda fase: elas continuam perguntando o que sempre
+perguntaram e continuam recebendo sim. Bem mais barato e bem menos arriscado do que
+ensinar todo mundo a existencia de um segundo modo.
+
+O raio de alerta (9,5 a 13 m) e folgado de proposito: e muito maior que o alcance de
+ameaca de 2 m, entao nao da para andar ao lado de um inimigo adormecido e levar
+ataque de oportunidade antes do combate comecar.
+
+### Acampamentos
+
+O combate estava travado em exatamente um inimigo — havia um `Order.Num()==1`
+escrito no codigo. Agora sao acampamentos de 1 a 3, espalhados pelo vale, e a
+iniciativa roda sobre o grupo acordado mais o heroi. **So o grupo que acordou
+luta**; o resto do vale continua onde estava.
+
+Entre um acampamento e outro o heroi recebe um respiro, nao um descanso: as
+habilidades de uma vez por encontro voltam, pontos de vida e espacos de magia nao.
+Uma sequencia de lutas tem que custar alguma coisa, senao explorar vira um corredor
+com brigas dentro.
+
+### O vale
+
+O mundo passou de 26x26 m para **60x60 m**, e o gerador deixou de encher tudo com um
+arquetipo so: escolhe tres ou quatro **sitios** espalhados, cada um com o seu carater
+(praca, mercado, terreiro, ruinas), com arvores, pedras e campo aberto entre eles.
+
+A cobertura solta e distribuida **em anel ao redor dos acampamentos**, e nao ao
+acaso: luta sem cobertura torna a regra de cobertura irrelevante, e cobertura no meio
+do nada nao ajuda ninguem.
+
+A regra do corredor entre nascimentos morreu junto com o modelo antigo — nao ha mais
+dois nascimentos. No lugar dela: nada e construido em cima de onde voce chega, e todo
+acampamento guarda um anel livre, porque aquele anel e onde a luta dele vai acontecer.
+
+**Vitoria** deixou de ser vencer um duelo e passou a ser limpar o vale inteiro. O
+botao SEGUIR sorteia um vale novo.

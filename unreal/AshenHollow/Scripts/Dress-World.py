@@ -1,0 +1,483 @@
+"""Gives the Landscape a material that cannot be unpainted, and grass on top of it.
+
+WHY THIS EXISTS: the black patches
+-----------------------------------
+The Landscape was wearing `MI_landscape` from the village pack, whose parent is
+`M_Master_landscape` -- a LAYERED landscape material with three paint layers
+(Grass, Pavingstone1, Pavingstone2). A layered landscape material shows the
+weighted sum of its layers, and where no layer has any weight that sum is
+**zero**: no colour, no lighting response, black. Importing a heightmap does not
+bring weightmap data with it, so every part of the kilometre nobody had painted
+came out black. It is not a lighting bug, not a missing texture, and not
+something a heightmap can fix.
+
+The cure is to stop having layers at all. `M_AH_Landscape`, built here from
+scratch, decides what the ground looks like from the SHAPE of the ground:
+
+* **Grass on anything you can walk on.** Two samples of the same texture, one at
+  four metres and one at sixty-four, multiplied together -- the standard cure
+  for tiling, and the difference between "a texture" and "a field".
+* **Rock on anything steep,** blended in by the surface normal between about
+  16 and 37 degrees. The terrain is built so that almost nothing sits in that
+  band, which means the rock appears exactly on the terrace faces and nowhere
+  else -- the cliffs read as cliffs rather than as green walls.
+* **Gravel in the low ground,** fading out over the first nine metres of height,
+  so valley floors and riverbanks are not the same green as the meadows.
+
+Nothing here can be left unpainted, so nothing here can be black. The same
+choice also means the whole kilometre is dressed without anybody painting a
+single square metre of it by hand.
+
+And then the thing that actually makes a map feel alive: a **Landscape Grass
+Output**, which scatters real grass meshes over every walkable metre of the
+world at draw time. It costs no actors, no memory per blade and nothing in the
+level file -- the engine grows it from the material and culls it by distance.
+It is the single cheapest step between "a terrain" and "a place".
+
+Idempotent: safe to run again. Run it through Preparar-Mapa.cmd.
+"""
+import unreal
+
+MAP       = '/Game/AshenHollow/Maps/ArenaVillage'
+HOME      = '/Game/AshenHollow/Materials'
+MAT_PATH  = HOME + '/M_AH_Landscape'
+GRASS_ASSET = HOME + '/LGT_AH_campo'
+
+TEX = '/Game/Fantastic_Village_Pack/textures/'
+GRASS_BC  = TEX + 'T_ENV_TERRAIN_grass_01_BC'
+GRASS_N   = TEX + 'T_ENV_TERRAIN_grass_01_N'
+GRAVEL_BC = TEX + 'T_ENV_TERRAIN_gravel_BC'
+ROCK_BC   = TEX + 'T_ENV_stone_BC'
+ROCK_N    = TEX + 'T_ENV_stone_N'
+# Our own tuft, five blades and none over thirty-five centimetres. The pack's
+# is a waist-high clump of broad leaves, and a kilometre of it came out as a
+# field of spinach the character wades through.
+GRASS_MESH = '/Game/AshenHollow/Kit/Meshes/SM_Kit_grama'
+GRASS_FALLBACK = '/Game/Fantastic_Village_Pack/meshes/environment/SM_ENV_PLANT_grass_village'
+
+# Tiling in unreal units: how far the texture goes before it repeats.
+NEAR_GRASS, MACRO_GRASS = 420.0, 7200.0
+GRAVEL_TILE, ROCK_TILE  = 560.0, 820.0
+# Cosine of the surface normal's Z. 0.80 is 37 degrees, 0.96 is 16 degrees.
+ROCK_FROM, ROCK_TO = 0.80, 0.96
+# Height in unreal units over which the low-ground gravel fades out.
+LOWLAND_UU = 900.0
+
+ME      = unreal.MaterialEditingLibrary
+assets  = unreal.AssetToolsHelpers.get_asset_tools()
+library = unreal.EditorAssetLibrary
+actors  = unreal.get_editor_subsystem(unreal.EditorActorSubsystem)
+levels  = unreal.get_editor_subsystem(unreal.LevelEditorSubsystem)
+
+PROBLEMS = []
+
+
+def say(message):
+    unreal.log_warning('AH_ART %s' % message)
+
+
+def bad(message):
+    PROBLEMS.append(message)
+    unreal.log_warning('AH_ART PROBLEMA: %s' % message)
+
+
+def texture(path):
+    found = library.load_asset(path)
+    if not found:
+        bad('textura ausente: %s' % path)
+    return found
+
+
+# ── Say what the Landscape is wearing BEFORE anything is touched ───────────
+# This is the diagnosis, printed whether or not the rest of the script works.
+levels.load_level(MAP)
+
+landscapes = [a for a in actors.get_all_level_actors()
+              if isinstance(a, (unreal.Landscape, unreal.LandscapeProxy))]
+if not landscapes:
+    bad('nao ha Landscape no mapa -- importe o heightmap antes de rodar isto')
+    unreal.log_warning('AH_ART ABORTADO')
+    raise SystemExit
+
+land = landscapes[0]
+try:
+    worn = land.get_editor_property('landscape_material')
+    say('material atual do Landscape: %s' % (worn.get_path_name() if worn else 'NENHUM'))
+    if worn:
+        parent = worn.get_editor_property('parent') if isinstance(
+            worn, unreal.MaterialInstance) else None
+        if parent:
+            say('   ...cujo pai e %s' % parent.get_path_name())
+except Exception as error:                                       # noqa: BLE001
+    bad('nao consegui ler o material do Landscape (%s)' % error)
+
+
+# ── The material ───────────────────────────────────────────────────────────
+material = library.load_asset(MAT_PATH)
+if not material:
+    material = assets.create_asset('M_AH_Landscape', HOME, unreal.Material,
+                                   unreal.MaterialFactoryNew())
+if not material:
+    bad('nao consegui criar %s' % MAT_PATH)
+    unreal.log_warning('AH_ART ABORTADO')
+    raise SystemExit
+
+# Built from nothing every run, so re-running can never leave half of an older
+# graph wired into the new one -- which is how a material ends up with two
+# grass samplers and one of them still connected.
+try:
+    ME.delete_all_material_expressions(material)
+except Exception as error:                                       # noqa: BLE001
+    say('nao consegui limpar o grafo antigo (%s) -- seguindo mesmo assim' % error)
+
+
+def node(kind, x, y):
+    return ME.create_material_expression(material, kind, x, y)
+
+
+def link(source, out_name, target, in_name):
+    ME.connect_material_expressions(source, out_name, target, in_name)
+
+
+def constant(value, x, y):
+    made = node(unreal.MaterialExpressionConstant, x, y)
+    made.set_editor_property('r', value)
+    return made
+
+
+def world_uv(tiling, x, y):
+    """Texture coordinates from world position, so nothing stretches.
+
+    A Landscape's own UVs run once across each component; using them would give
+    the map's ground a visible grid the size of a city block. World position
+    divided by a tiling distance is flat, seamless and the same everywhere.
+    """
+    where = node(unreal.MaterialExpressionWorldPosition, x, y)
+    flat = node(unreal.MaterialExpressionComponentMask, x + 150, y)
+    flat.set_editor_property('r', True)
+    flat.set_editor_property('g', True)
+    flat.set_editor_property('b', False)
+    flat.set_editor_property('a', False)
+    link(where, '', flat, '')
+    scaled = node(unreal.MaterialExpressionDivide, x + 300, y)
+    link(flat, '', scaled, 'A')
+    scaled.set_editor_property('const_b', tiling)
+    return scaled
+
+
+def sample(path, tiling, x, y, is_normal=False):
+    picture = texture(path)
+    shot = node(unreal.MaterialExpressionTextureSample, x + 480, y)
+    if picture:
+        shot.set_editor_property('texture', picture)
+    if is_normal:
+        shot.set_editor_property('sampler_type', unreal.MaterialSamplerType.SAMPLERTYPE_NORMAL)
+    link(world_uv(tiling, x, y), '', shot, 'UVs')
+    return shot
+
+
+def ramp(source, out_name, low, high, x, y):
+    """saturate((value - low) / (high - low)) -- a smooth 0..1 mask."""
+    shifted = node(unreal.MaterialExpressionSubtract, x, y)
+    link(source, out_name, shifted, 'A')
+    shifted.set_editor_property('const_b', low)
+    scaled = node(unreal.MaterialExpressionDivide, x + 160, y)
+    link(shifted, '', scaled, 'A')
+    scaled.set_editor_property('const_b', max(high - low, 0.0001))
+    held = node(unreal.MaterialExpressionClamp, x + 320, y)
+    link(scaled, '', held, '')
+    return held
+
+
+def blend(dark, light, mask, x, y):
+    mixed = node(unreal.MaterialExpressionLinearInterpolate, x, y)
+    link(dark, '', mixed, 'A')
+    link(light, '', mixed, 'B')
+    link(mask, '', mixed, 'Alpha')
+    return mixed
+
+
+# Masks: how steep, and how low.
+normal = node(unreal.MaterialExpressionVertexNormalWS, -2400, 900)
+upness = node(unreal.MaterialExpressionComponentMask, -2250, 900)
+upness.set_editor_property('r', False)
+upness.set_editor_property('g', False)
+upness.set_editor_property('b', True)
+upness.set_editor_property('a', False)
+link(normal, '', upness, '')
+flatness = ramp(upness, '', ROCK_FROM, ROCK_TO, -2050, 900)
+rockmask = node(unreal.MaterialExpressionOneMinus, -1650, 900)
+link(flatness, '', rockmask, '')
+
+altitude = node(unreal.MaterialExpressionWorldPosition, -2400, 1200)
+height = node(unreal.MaterialExpressionComponentMask, -2250, 1200)
+height.set_editor_property('r', False)
+height.set_editor_property('g', False)
+height.set_editor_property('b', True)
+height.set_editor_property('a', False)
+link(altitude, '', height, '')
+highness = ramp(height, '', 0.0, LOWLAND_UU, -2050, 1200)
+lowmask = node(unreal.MaterialExpressionOneMinus, -1650, 1200)
+link(highness, '', lowmask, '')
+
+# Colour.
+grass = sample(GRASS_BC, NEAR_GRASS, -2400, -900)
+gravel = sample(GRAVEL_BC, GRAVEL_TILE, -2400, -400)
+rock = sample(ROCK_BC, ROCK_TILE, -2400, 100)
+
+# Macro variation: the same grass at sixty-four metres, used as a brightness
+# wash. Without it a kilometre of one texture reads as wallpaper from the air.
+macro = sample(GRASS_BC, MACRO_GRASS, -2400, -1400)
+macro_grey = node(unreal.MaterialExpressionComponentMask, -1850, -1400)
+macro_grey.set_editor_property('r', True)
+macro_grey.set_editor_property('g', False)
+macro_grey.set_editor_property('b', False)
+macro_grey.set_editor_property('a', False)
+link(macro, 'RGB', macro_grey, '')
+macro_range = node(unreal.MaterialExpressionMultiply, -1700, -1400)
+link(macro_grey, '', macro_range, 'A')
+macro_range.set_editor_property('const_b', 0.55)
+macro_lift = node(unreal.MaterialExpressionAdd, -1550, -1400)
+link(macro_range, '', macro_lift, 'A')
+macro_lift.set_editor_property('const_b', 0.72)
+
+ground = blend(grass, gravel, lowmask, -1400, -700)
+ground = blend(ground, rock, rockmask, -1150, -700)
+lit = node(unreal.MaterialExpressionMultiply, -900, -700)
+link(ground, '', lit, 'A')
+link(macro_lift, '', lit, 'B')
+ME.connect_material_property(lit, '', unreal.MaterialProperty.MP_BASE_COLOR)
+
+# Normals and roughness.
+grass_n = sample(GRASS_N, NEAR_GRASS, -2400, 400, is_normal=True)
+rock_n = sample(ROCK_N, ROCK_TILE, -2400, 650, is_normal=True)
+bumps = blend(grass_n, rock_n, rockmask, -1400, 500)
+ME.connect_material_property(bumps, '', unreal.MaterialProperty.MP_NORMAL)
+
+soft = constant(0.94, -1400, 1500)
+hard = constant(0.74, -1400, 1600)
+rough = blend(soft, hard, rockmask, -1150, 1550)
+ME.connect_material_property(rough, '', unreal.MaterialProperty.MP_ROUGHNESS)
+
+
+# ── Grass, grown by the material rather than placed ────────────────────────
+def make_grass():
+    """A LandscapeGrassType, and the material output that scatters it.
+
+    Wrapped and optional on purpose: the grass API changes between engine
+    versions and a failure here must not cost the ground its material. If this
+    part does not take, the world is still dressed -- just bare.
+    """
+    mesh = library.load_asset(GRASS_MESH)
+    if not mesh:
+        say('%s ainda nao importada -- rode Importar-Kit.cmd; usando a do pack'
+            % GRASS_MESH)
+        mesh = library.load_asset(GRASS_FALLBACK)
+    if not mesh:
+        bad('nenhuma malha de grama disponivel')
+        return None
+
+    kind = library.load_asset(GRASS_ASSET)
+    if not kind:
+        kind = assets.create_asset('LGT_AH_campo', HOME, unreal.LandscapeGrassType,
+                                   unreal.LandscapeGrassTypeFactory())
+    if not kind:
+        bad('nao consegui criar o LandscapeGrassType')
+        return None
+
+    variety = unreal.GrassVariety()
+    variety.set_editor_property('grass_mesh', mesh)
+    #
+    # A QUARTER SIZE, and that is not a taste decision.
+    #
+    # SM_ENV_PLANT_grass_village is modelled as a waist-high clump of broad
+    # leaves, and scattered at its own scale over a kilometre it came out as a
+    # field of two-metre spinach with the character wading through it. Grass
+    # you have to look over is not grass, it is scenery in the way.
+    #
+    # A third to a half is ankle-to-shin high on a 1.8 m figure, which is what
+    # grass is. The density comes down with it: dense short grass costs the
+    # same to draw as dense tall grass and reads far better, but a hundred and
+    # forty per square is enough at this size.
+    #
+    for name, value in (('grass_density', 150.0),
+                        ('start_cull_distance', 2600),
+                        ('end_cull_distance', 6500),
+                        ('random_rotation', True),
+                        ('align_to_surface', True),
+                        ('scale_x', unreal.FloatInterval(0.55, 0.95)),
+                        ('scale_y', unreal.FloatInterval(0.55, 0.95)),
+                        ('scale_z', unreal.FloatInterval(0.80, 1.60))):
+        try:
+            variety.set_editor_property(name, value)
+        except Exception:                                        # noqa: BLE001
+            # Several of these are per-platform structs in some engine
+            # versions. A default is fine; a crash is not.
+            try:
+                if name == 'grass_density':
+                    variety.set_editor_property(name, unreal.PerPlatformFloat(value))
+                else:
+                    variety.set_editor_property(name, unreal.PerPlatformInt(int(value)))
+            except Exception:                                    # noqa: BLE001
+                say('   (nao consegui ajustar %s da grama -- fica no padrao)' % name)
+    kind.set_editor_property('grass_varieties', [variety])
+    library.save_asset(GRASS_ASSET)
+
+    output = node(unreal.MaterialExpressionLandscapeGrassOutput, -900, 1900)
+    entry = unreal.GrassInput()
+    entry.set_editor_property('name', 'Campo')
+    entry.set_editor_property('grass_type', kind)
+    output.set_editor_property('grass_types', [entry])
+    # Density is the flat-ground mask, so grass grows on meadows and stops at
+    # the foot of every cliff without anybody drawing the line.
+    link(flatness, '', output, '')
+    return kind
+
+
+try:
+    grown = make_grass()
+    say('grama: %s' % ('ligada' if grown else 'NAO ligada'))
+except Exception as error:                                       # noqa: BLE001
+    bad('a grama falhou (%s) -- o chao continua certo' % error)
+
+ME.recompile_material(material)
+library.save_asset(MAT_PATH)
+say('material construido: %s' % MAT_PATH)
+
+
+# ── Put it on ──────────────────────────────────────────────────────────────
+dressed = 0
+for proxy in actors.get_all_level_actors():
+    if not isinstance(proxy, (unreal.Landscape, unreal.LandscapeProxy)):
+        continue
+    try:
+        proxy.set_editor_property('landscape_material', material)
+        dressed += 1
+    except Exception as error:                                   # noqa: BLE001
+        bad('nao consegui vestir %s (%s)' % (proxy.get_actor_label(), error))
+say('%d Landscape(s) vestido(s) com M_AH_Landscape' % dressed)
+if dressed == 0:
+    bad('nenhum Landscape recebeu o material')
+
+
+# ── What this engine build can do about heightmaps ─────────────────────────
+# Reimporting the heightmap is the only step in this whole pipeline that Lucas
+# has to do by hand in the editor, which is exactly why it keeps getting
+# skipped -- three times now. Automating it needs an API whose name I do not
+# know, and guessing API names has already cost two runs today.
+#
+# So instead of guessing a third time: ask. This prints every method on the
+# landscape classes whose name mentions heightmap, import or edit, so the next
+# version of this script can be written from fact.
+def probe(label, thing):
+    try:
+        found = sorted(name for name in dir(thing)
+                       if not name.startswith('_')
+                       and any(word in name.lower()
+                               for word in ('heightmap', 'height', 'import', 'edit_layer',
+                                            'render_target', 'resize', 'reimport')))
+    except Exception as error:                                   # noqa: BLE001
+        say('sonda %s falhou (%s)' % (label, error))
+        return
+    say('sonda %s: %s' % (label, ', '.join(found) if found else '(nada)'))
+
+
+for name in ('Landscape', 'LandscapeProxy', 'LandscapeSubsystem',
+             'LandscapeEditorSubsystem', 'LandscapeStreamingProxy'):
+    kind = getattr(unreal, name, None)
+    if kind is None:
+        say('sonda %s: essa classe nao existe nesta build' % name)
+    else:
+        probe(name, kind)
+probe('o Landscape do mapa', land)
+for name in ('RenderingLibrary', 'EditorAssetLibrary', 'AssetToolsHelpers'):
+    kind = getattr(unreal, name, None)
+    if kind is not None:
+        probe(name, kind)
+
+# ── The light, which is why everything in shadow is black ───────────────────
+"""
+Lucas, three times: "as coisas estao cinza". The print finally showed what
+that means, and it is not the materials -- it is that there is NO AMBIENT.
+Grass in the sun is a bright green; everything the sun does not reach is
+pure black. A world with only two states, lit and black, reads as grey and
+no material change was ever going to fix it.
+
+The cause is one line of mine in AAHGameMode::ApplyArenaLight: it sets the
+SkyLight to Movable at runtime so it can change its intensity per world. A
+Movable SkyLight throws away the capture that was baked into the map, and
+without real-time capture it has nothing to replace it with -- so the fill
+light becomes exactly zero. The intensity I was carefully rolling each world
+was being multiplied by a black cubemap.
+
+Fixed here rather than in C++ because it lives in the map, and because a
+wrong guess in this script costs a minute while a wrong guess in C++ costs
+ninety-five on this machine. Real-time capture also needs something to
+capture: with no SkyAtmosphere in the map there is no sky, so one is spawned
+if it is missing.
+"""
+everything = actors.get_all_level_actors()
+
+
+def kind_of(actor):
+    return actor.get_class().get_name() if actor else ''
+
+
+skies  = [a for a in everything if kind_of(a) == 'SkyLight']
+airs   = [a for a in everything if 'SkyAtmosphere' in kind_of(a)]
+suns   = [a for a in everything if kind_of(a) == 'DirectionalLight']
+fogs   = [a for a in everything if 'ExponentialHeightFog' in kind_of(a)]
+say('luz no mapa: %d SkyLight, %d SkyAtmosphere, %d sol, %d neblina'
+    % (len(skies), len(airs), len(suns), len(fogs)))
+
+if not airs:
+    try:
+        born = actors.spawn_actor_from_class(unreal.SkyAtmosphere,
+                                             unreal.Vector(0.0, 0.0, 0.0))
+        if born:
+            airs = [born]
+            say('criei um SkyAtmosphere -- sem ceu nao ha o que capturar')
+        else:
+            note('nao consegui criar o SkyAtmosphere')
+    except Exception as error:                                   # noqa: BLE001
+        note('nao consegui criar o SkyAtmosphere (%s)' % error)
+
+for actor in skies:
+    try:
+        lamp = actor.get_editor_property('light_component')
+    except Exception as error:                                   # noqa: BLE001
+        note('nao li o light_component do SkyLight (%s)' % error)
+        continue
+    for name, value in (('real_time_capture', True),
+                        ('lower_hemisphere_is_black', False),
+                        ('intensity', 2.0),
+                        ('sky_distance_threshold', 250000.0),
+                        ('mobility', unreal.ComponentMobility.MOVABLE)):
+        try:
+            lamp.set_editor_property(name, value)
+        except Exception as error:                               # noqa: BLE001
+            note('SkyLight: nao consegui ajustar %s (%s)' % (name, error))
+    # Read it back. A setting reported from the place that wanted it rather
+    # than the place that has it is a setting nobody has checked -- this
+    # project has now paid for that lesson twice.
+    got = []
+    for name in ('real_time_capture', 'lower_hemisphere_is_black', 'intensity'):
+        try:
+            got.append('%s=%s' % (name, lamp.get_editor_property(name)))
+        except Exception:                                        # noqa: BLE001
+            got.append('%s=?' % name)
+    unreal.log_warning('AH_ART ceu: %s' % ', '.join(got))
+
+if not skies:
+    note('NAO ha SkyLight no mapa -- sem luz de preenchimento toda sombra e preta')
+if not suns:
+    note('NAO ha luz direcional no mapa')
+
+levels.save_current_level()
+
+if PROBLEMS:
+    unreal.log_warning('AH_ART terminou com %d problema(s):' % len(PROBLEMS))
+    for problem in PROBLEMS:
+        unreal.log_warning('AH_ART   - %s' % problem)
+else:
+    unreal.log_warning('AH_ART tudo certo. Nada no mapa pode ficar preto agora.')

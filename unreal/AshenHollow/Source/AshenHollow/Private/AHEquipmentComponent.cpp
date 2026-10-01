@@ -7,6 +7,7 @@
 #include "Engine/SkeletalMesh.h"
 #include "Engine/StaticMesh.h"
 #include "Materials/MaterialInterface.h"
+#include "Materials/MaterialInstanceDynamic.h"
 #include "UObject/ConstructorHelpers.h"
 #include "UObject/UObjectGlobals.h"
 
@@ -106,7 +107,7 @@ static const FAHWeaponArt& WeaponArt(EAHWeaponKind Kind)
           FVector::ZeroVector, FRotator::ZeroRotator, true, 1.f,  75.f,
           TEXT(""), FVector::ZeroVector, FRotator::ZeroRotator, 1.f, TEXT("") },
         // Mace -- no blunt mesh in either pack; primitive fallback on purpose.
-        { TEXT(""), FVector::ZeroVector, FRotator::ZeroRotator, true, 1.f,  68.f,
+        { TEXT("/Game/AshenHollow/LifeKit/Meshes/SM_Life_Mace"), FVector::ZeroVector, FRotator::ZeroRotator, false, 1.f,  68.f,
           TEXT("/Game/StylizedCharacter/Meshes/Item/Weapons/Shield/SK_Shield_Newbie_01"),
           FVector::ZeroVector, FRotator::ZeroRotator, 1.f, TEXT("") },
         // Staff
@@ -239,7 +240,12 @@ void UAHEquipmentComponent::Configure(EAHWeaponKind Kind)
     }
     else BuildPrimitiveWeapon(Kind);
 
-    if(Kind==EAHWeaponKind::Sword || Kind==EAHWeaponKind::Mace)
+    const auto* OwnerCharacter=CastChecked<AAHCharacter>(GetOwner());
+    if(!OwnerCharacter->bEnemy && OwnerCharacter->bCharacterReady
+        && OwnerCharacter->Equipped[static_cast<int32>(EAHSlot::MaoPrincipal)].IsEmpty()) Grip->SetVisibility(false,true);
+    const bool bHasShield=OwnerCharacter->bEnemy ? (Kind==EAHWeaponKind::Sword || Kind==EAHWeaponKind::Mace)
+        : !OwnerCharacter->Equipped[static_cast<int32>(EAHSlot::MaoSecundaria)].IsEmpty();
+    if(bHasShield)
     {
         auto* ShieldArm=Anchor(TEXT("hand_l"));
         // A shield is a disc, so its longest axis is its diameter: standing that
@@ -247,7 +253,49 @@ void UAHEquipmentComponent::Configure(EAHWeaponKind Kind)
         if(!AttachArt(ShieldArm,Art.ShieldMeshPath,Art.ShieldOffset,Art.ShieldRotation,Art.ShieldScale,false))
             BuildPrimitiveShield(ShieldArm);
     }
+    ConfigureArmor(Kind);
 }
+void UAHEquipmentComponent::ConfigureArmor(EAHWeaponKind Kind)
+{
+    auto* Character=CastChecked<AAHCharacter>(GetOwner());
+    const TCHAR* Style=Kind==EAHWeaponKind::Bow?TEXT("Hunter"):
+        Kind==EAHWeaponKind::Staff?TEXT("Seer"):TEXT("Iron");
+    const auto* Armor=AHItems::Find(Character->Equipped[static_cast<int32>(EAHSlot::Armadura)]);
+    if(!Character->bEnemy) Style=!Armor || Armor->Base<=10?TEXT("Seer"):Armor->TetoDestreza==0?TEXT("Iron"):TEXT("Hunter");
+    const FLinearColor Accent=Character->bEnemy
+        ? (Kind==EAHWeaponKind::Staff?FLinearColor(.36f,.10f,.52f):
+           Kind==EAHWeaponKind::Bow?FLinearColor(.25f,.32f,.08f):FLinearColor(.52f,.095f,.035f))
+        : FLinearColor(.025f,.36f,.40f);
+    struct FArmorSlot { const TCHAR* Piece; const TCHAR* Bone; };
+    const FArmorSlot Slots[]={{TEXT("Chest"),TEXT("spine_03")},{TEXT("Helm"),TEXT("head")},
+                             {TEXT("Shoulder"),TEXT("upperarm_l")},{TEXT("Shoulder"),TEXT("upperarm_r")}};
+    for(const auto& Slot:Slots)
+    {
+        if(!Character->bEnemy)
+        {
+            if(FString(Slot.Piece)==TEXT("Helm") && Character->Equipped[static_cast<int32>(EAHSlot::Elmo)].IsEmpty()) continue;
+            if(FString(Slot.Piece)!=TEXT("Helm") && !Armor) continue;
+        }
+        const FString Path=FString::Printf(TEXT("/Game/AshenHollow/LifeKit/Meshes/SM_Life_%s_%s"),Slot.Piece,Style);
+        auto* Mesh=LoadObject<UStaticMesh>(nullptr,*Path,nullptr,LOAD_NoWarn|LOAD_Quiet);
+        if(!Mesh) continue;
+        Part(Anchor(Slot.Bone),Mesh,nullptr,FVector::ZeroVector,FVector::OneVector);
+        auto* Body=Cast<UStaticMeshComponent>(LastAttached.Get());
+        if(!Body) continue;
+        for(int32 Index=0;Index<Mesh->GetStaticMaterials().Num();++Index)
+        {
+            const FString Name=Mesh->GetStaticMaterials()[Index].MaterialSlotName.ToString();
+            if(Name.Contains(TEXT("Accent")) || Name.Contains(TEXT("Glow")))
+                if(auto* Dye=Body->CreateDynamicMaterialInstance(Index))
+                    Dye->SetVectorParameterValue(TEXT("Tint"),Name.Contains(TEXT("Glow"))?Accent*2.f:Accent);
+        }
+    }
+    // Keep the tested mannequin skeleton while the armour supplies the silhouette.
+    if(auto* Under=LoadObject<UMaterialInterface>(nullptr,TEXT("/Game/AshenHollow/LifeKit/Materials/M_Life_Underarmor")))
+        for(int32 Index=0;Index<Character->GetMesh()->GetNumMaterials();++Index)
+            Character->GetMesh()->SetMaterial(Index,Under);
+}
+
 void UAHEquipmentComponent::PlayShot()
 {
     if(!WeaponMesh || !ShotPath || !*ShotPath) return;

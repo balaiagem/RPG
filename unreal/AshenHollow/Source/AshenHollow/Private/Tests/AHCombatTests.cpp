@@ -106,7 +106,7 @@ bool FAHCombatTest::RunTest(const FString& Parameters)
     auto* Downed=World->SpawnActor<AAHCharacter>(FVector(5000,0,100),FRotator::ZeroRotator,Spawn);
     if(TestNotNull(TEXT("Downed fixture"),Downed))
     {
-        Downed->ReceiveHit(100);
+        Downed->ReceiveHit(Downed->Health);
         TestTrue(TEXT("Zero HP enters downed state"),Downed->bDowned);
         TestFalse(TEXT("Downed character cannot act"),Downed->CanAct());
         Downed->bStabilized=true; Downed->DeathSuccesses=3;
@@ -188,8 +188,8 @@ bool FAHCombatTest::RunTest(const FString& Parameters)
     {
         Quarry->bEnemy=true; Quarry->Health=Quarry->MaxHealth=400; Quarry->ArmorClass=2;
         Archer->ChooseAncestry(EAHAncestry::Human);
-        Archer->ChooseClass(EAHHeroClass::Wizard);
-        TestTrue(TEXT("The wizard carries a ranged attack"),Archer->HasRangedAttack());
+        Archer->ChooseClass(EAHHeroClass::Ranger);
+        TestTrue(TEXT("The equipped bow provides a ranged attack"),Archer->HasRangedAttack());
 
         Archer->StartTurn();
         Quarry->SetActorLocation(FVector(12000.f+Archer->RangedReach()+500.f,0,100));

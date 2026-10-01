@@ -30,5 +30,23 @@ if not exist "%AH_ROOT%\Content\%AH_FILE%.umap" (
     exit /b 4
 )
 
+rem ---------------------------------------------------------------------------
+rem A DLL e mais velha que o codigo? Entao o jogo que abrir NAO e o codigo atual.
+rem Isso ja custou um dia inteiro: um build falhou, a Unreal continuou usando a
+rem DLL antiga sem dizer nada, e passamos a noite discutindo bugs de um jogo que
+rem ninguem estava rodando. Um atalho que abre silenciosamente a versao errada e
+rem pior do que um atalho que nao abre.
+rem ---------------------------------------------------------------------------
+powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0Check-Fresh.ps1" -Root "%AH_ROOT%"
+if errorlevel 2 (
+    echo  Rode Build-Now.bat primeiro.
+    pause
+    exit /b 5
+)
+if errorlevel 1 (
+    choice /c SN /n /m "  Abrir mesmo assim a versao antiga? [S/N] "
+    if errorlevel 2 exit /b 6
+)
+
 echo Abrindo %AH_MAP%
 start "Ashen Hollow" "%AH_EDITOR%" "%AH_ROOT%\AshenHollow.uproject" "%AH_MAP%" -game -windowed -ResX=1280 -ResY=720

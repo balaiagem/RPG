@@ -1,7 +1,7 @@
 #pragma once
 #include "CoreMinimal.h"
 #include "AHClassData.h"
-enum class EAHSpell : uint8 { SacredFlame, CureWounds, HealingWord, GuidingBolt, ShieldOfFaith, Aid, FireBolt, RayOfFrost, MagicMissile, FalseLife, MageArmor, ScorchingRay, InflictWounds, Bless, BurningHands, Thunderwave, HuntersMark, Goodberry, Count };
+enum class EAHSpell : uint8 { SacredFlame, CureWounds, HealingWord, GuidingBolt, ShieldOfFaith, Aid, FireBolt, RayOfFrost, MagicMissile, FalseLife, MageArmor, ScorchingRay, InflictWounds, Bless, BurningHands, Thunderwave, HuntersMark, Goodberry, Shield, Count };
 struct FAHSpellDefinition
 {
     EAHSpell Id;

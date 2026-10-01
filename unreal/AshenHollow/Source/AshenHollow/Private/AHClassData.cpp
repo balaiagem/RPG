@@ -28,7 +28,7 @@ namespace
         {   // Cleric
             TEXT("CLÉRIGO"), TEXT("ORÁCULO"), TEXT("CURAR"),
             TEXT("Curar Ferimentos / ação / cura própria 1d8+3 / 2 espaços por encontro"),
-            TEXT("ESCUDO"),
+            TEXT("CANALIZAR"),
             TEXT("CURAR FERIMENTOS"), TEXT("Ação: cura 1d8+3"), TEXT("Armadura, escudo e magia"),
             10, 18, 4, 6, 2, 0, 2, 7, true,
             EAHWeaponKind::Mace, TEXT("Heal"), FLinearColor(.15f,.62f,.55f,1.f),
@@ -84,6 +84,37 @@ namespace
         { TEXT("DRACONATO"), TEXT("Escamas e sopro: resiste a fogo, sopro 2d6 | 9 m"), TEXT("Sopro dracônico 2d6"),   900.f, 1.10f, 0, 0, 0, 1,  false, true,  false, true  },
     };
 
+    // Order must match EAHHeroClass. A class with no style is a row of zeroes,
+    // which is the point of having the table: nothing is left implicit.
+    const FAHFightingStyle GStyles[] =
+    {
+        { 1, TEXT("DEFESA"),   1, 0, 0 },   // Fighter:  +1 CA
+        { 0, nullptr,          0, 0, 0 },   // Barbarian
+        { 0, nullptr,          0, 0, 0 },   // Cleric
+        { 0, nullptr,          0, 0, 0 },   // Wizard
+        { 0, nullptr,          0, 0, 0 },   // Sorcerer
+        { 0, nullptr,          0, 0, 0 },   // Rogue: gets Sneak Attack instead
+        { 2, TEXT("DUELO"),    0, 0, 2 },   // Paladin:  +2 dano corpo a corpo
+        { 2, TEXT("ARQUEIRO"), 0, 2, 0 },   // Ranger:   +2 para acertar a distancia
+    };
+
+    // Order must match EAHHeroClass.
+    const FAHSubclass GSubclasses[] =
+    {
+        { 3, TEXT("CAMPEAO"),              TEXT("Critico tambem no 19 natural") },
+        { 3, TEXT("FURIOSO"),              TEXT("Frenesi: ataque extra com acao bonus, em furia") },
+        { 1, TEXT("DOMINIO DA VIDA"),      TEXT("Discipulo da Vida: +2 +circulo em cada cura sua") },
+        { 2, TEXT("EVOCACAO"),             TEXT("Truque potente: metade do dano mesmo quando erra") },
+        { 1, TEXT("LINHAGEM DRACONICA"),   TEXT("+1 PV por nivel e CA base 13") },
+        { 3, TEXT("ASSASSINO"),            TEXT("Vantagem na primeira rodada; golpe em surpresa e critico") },
+        { 3, TEXT("JURAMENTO DA DEVOCAO"), TEXT("Arma sagrada: +2 para acertar por 10 turnos") },
+        { 3, TEXT("CACADOR"),              TEXT("Matador de colossos: +1d8 por turno em alvo ferido") },
+    };
+
+    static_assert(UE_ARRAY_COUNT(GSubclasses) == static_cast<int32>(EAHHeroClass::Count),
+        "Every EAHHeroClass needs a row in GSubclasses.");
+    static_assert(UE_ARRAY_COUNT(GStyles)     == static_cast<int32>(EAHHeroClass::Count),
+        "Every EAHHeroClass needs a row in GStyles, even if it is all zeroes.");
     static_assert(UE_ARRAY_COUNT(GClasses)    == static_cast<int32>(EAHHeroClass::Count),
         "Every EAHHeroClass needs a row in GClasses.");
     static_assert(UE_ARRAY_COUNT(GAncestries) == static_cast<int32>(EAHAncestry::Count),
@@ -98,6 +129,14 @@ namespace AHRules
     const FAHClassSheet& Class(EAHHeroClass Which)
     {
         return GClasses[FMath::Clamp(static_cast<int32>(Which), 0, ClassCount() - 1)];
+    }
+    const FAHFightingStyle& Style(EAHHeroClass Which)
+    {
+        return GStyles[FMath::Clamp(static_cast<int32>(Which), 0, ClassCount() - 1)];
+    }
+    const FAHSubclass& Subclass(EAHHeroClass Which)
+    {
+        return GSubclasses[FMath::Clamp(static_cast<int32>(Which), 0, ClassCount() - 1)];
     }
     const FAHAncestrySheet& Ancestry(EAHAncestry Which)
     {

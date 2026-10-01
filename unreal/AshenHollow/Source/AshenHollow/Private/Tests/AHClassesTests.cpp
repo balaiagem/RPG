@@ -25,13 +25,16 @@ bool FAHClassesTest::RunTest(const FString& Parameters)
         if(!TestNotNull(TEXT("Ancestry/class fixture"),Created)) continue;
         Created->ChooseAncestry(static_cast<EAHAncestry>(Race));
         Created->ChooseClass(static_cast<EAHHeroClass>(Class));
-        const int32 HP[]={12,14,10,8},AC[]={16,14,18,12},Initiative[]={1,2,0,2};
-        TestEqual(TEXT("Ancestry HP applied once"),Created->MaxHealth,HP[Class]+(Race==2?1:0));
-        TestEqual(TEXT("Elf armor trait"),Created->ArmorClass,AC[Class]+(Race==1?1:0));
-        TestEqual(TEXT("Human initiative trait"),Created->InitiativeBonus,Initiative[Class]+(Race==0?1:0));
+        const auto Scores=AHSheet::Total(Created->Abilities,Created->Ancestry);
+        const auto& Blood=AHRules::Ancestry(Created->Ancestry);
+        TestEqual(TEXT("Hit die plus actual Constitution and ancestry"),Created->MaxHealth,AHSheet::HitDie(Created->HeroClass)+Scores.Mod(EAHAbility::Constituicao)+Blood.HealthPerLevel);
+        const int32 AC=Created->ArmorClass;
+        Created->RecomputeSheet();
+        TestEqual(TEXT("Recomputing does not stack armor bonuses"),Created->ArmorClass,AC);
+        TestEqual(TEXT("Initiative uses actual Dexterity and ancestry"),Created->InitiativeBonus,Scores.Mod(EAHAbility::Destreza)+Blood.InitiativeBonus);
         Created->StartTurn();
-        TestEqual(TEXT("Ancestry turn speed"),Created->Turn.Movement,Race>=2?750.f:900.f);
-        Created->Dash(); TestEqual(TEXT("Dash uses ancestry speed"),Created->Turn.Movement,Race>=2?1500.f:1800.f);
+        TestEqual(TEXT("Turn uses equipped movement"),Created->Turn.Movement,Created->BaseMovement);
+        Created->Dash(); TestEqual(TEXT("Dash doubles equipped movement"),Created->Turn.Movement,Created->BaseMovement*2);
         Created->ChooseAncestry(static_cast<EAHAncestry>((Race+1)%4));
         TestEqual(TEXT("Ancestry locks after character confirmation"),static_cast<int32>(Created->Ancestry),Race);
         Created->Destroy();
@@ -161,10 +164,10 @@ bool FAHClassesTest::RunTest(const FString& Parameters)
             Orc->ChooseClass(EAHHeroClass::Fighter);
             TestEqual(TEXT("A heavier build hits harder"),Orc->DamageModifier,
                 AHRules::Class(EAHHeroClass::Fighter).DamageModifier+1);
-            Orc->ReceiveHit(500,EAHDamageType::Physical);
+            Orc->ReceiveHit(Orc->Health,EAHDamageType::Physical);
             TestTrue(TEXT("Relentless endurance refuses the first drop"),Orc->IsAlive() && Orc->Health==1);
             TestFalse(TEXT("Refusing to fall does not mark the character downed"),Orc->bDowned);
-            Orc->ReceiveHit(500,EAHDamageType::Physical);
+            Orc->ReceiveHit(Orc->Health,EAHDamageType::Physical);
             TestTrue(TEXT("The second drop goes through"),Orc->bDowned);
             Orc->Rest();
             TestFalse(TEXT("A rest restores the refusal"),Orc->bRelentlessUsed);
